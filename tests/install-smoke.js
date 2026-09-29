@@ -104,7 +104,9 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.writeFileSync(outside, 'original i3 config\n');
     fs.mkdirSync(path.join(home, '.config', 'i3'), {recursive: true});
     // A dotfiles checkout is usually symlinked into place: replace the link, not its target.
-    fs.symlinkSync(outside, path.join(home, '.config', 'i3', 'config'));
+    // Relative, as a dotfiles checkout links it: a backup that copies the link is dead.
+    fs.symlinkSync(path.relative(path.join(home, '.config', 'i3'), outside),
+        path.join(home, '.config', 'i3', 'config'));
     // Stub every system tool the installer can reach: a real run must never touch
     // this machine's services or trust store just because a later step exists.
     const homeBin = path.join(home, 'bin');
@@ -126,8 +128,10 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
         'Writing through the link would have overwritten the dotfiles checkout');
     const backups = fs.readdirSync(path.join(home, '.local/state/debian-desktop-setup'));
     assert.equal(backups.length, 1, 'One timestamped backup directory');
-    assert.equal(fs.readFileSync(path.join(home, '.local/state/debian-desktop-setup',
-        backups[0], 'i3/config'), 'utf8'), 'original i3 config\n', 'The original is recoverable');
+    const backupCopy = path.join(home, '.local/state/debian-desktop-setup', backups[0], 'i3/config');
+    assert.ok(!fs.lstatSync(backupCopy).isSymbolicLink(),
+        'A copied symlink is not a backup: the relative target no longer resolves from there');
+    assert.equal(fs.readFileSync(backupCopy, 'utf8'), 'original i3 config\n', 'The original is recoverable');
     fs.rmSync(home, {recursive: true, force: true});
 }
 
@@ -183,6 +187,97 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     // The summary has to name the backup directory: it is the only way back.
     assert.match(result.stdout, /Backups, when needed: .*\.local\/state\/debian-desktop-setup/);
     assert.match(result.stdout, /Alt\+D/, 'Tell the user how to open the launcher');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// Declining a replacement must leave the file alone — including the executable scripts,
+// which a second installation pass used to overwrite with no prompt and no backup.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-decline-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    for (const name of ['apt-get', 'systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
+        fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const mine = path.join(home, '.config', 'i3', 'brightness.sh');
+    fs.mkdirSync(path.dirname(mine), {recursive: true});
+    fs.writeFileSync(mine, '#!/bin/sh\n# my own brightness script\n', {mode: 0o755});
+    const custom = path.join(home, '.local/share/applications/retext-preview.desktop');
+    fs.mkdirSync(path.dirname(custom), {recursive: true});
+    fs.writeFileSync(custom, '[Desktop Entry]\nName=My ReText\n');
+    // Decline the six package groups, accept the configuration bundle, then decline
+    // every replacement it offers.
+    const answers = ['n', 'n', 'n', 'n', 'n', 'n', 'y'].concat(Array(60).fill('n')).join('\n') + '\n';
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: answers,
+        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(mine, 'utf8'), '#!/bin/sh\n# my own brightness script\n',
+        'A declined script must not be overwritten by a second installation pass');
+    assert.equal(fs.readFileSync(custom, 'utf8'), '[Desktop Entry]\nName=My ReText\n',
+        'The desktop entry must go through the same consent and backup path');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// A failing optional step must not take the rest of the installation, or the closing
+// summary, down with it: the backup path is the only way back and it prints there.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-failstep-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    for (const name of ['apt-get', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
+        fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'systemctl'), '#!/bin/sh\necho "systemctl: unit failed" >&2\nexit 1\n', {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(120),
+        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.match(result.stdout, /Backups, when needed: .*\.local\/state\/debian-desktop-setup/,
+        'The summary must print even after a step failed');
+    assert.match(result.stdout, /Steps that failed:[\s\S]*systemctl/,
+        'A failed step must be named, not swallowed');
+    assert.notEqual(result.status, 0, 'Report a non-zero status when a step failed');
+    assert.ok(fs.existsSync(path.join(home, '.config', 'i3', 'config')),
+        'A failed service step must not prevent the configuration from being installed');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// A fatal failure must point at the line that ran the command, not at run()'s own body.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-errline-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    fs.writeFileSync(path.join(stubs, 'apt-get'), '#!/bin/sh\necho "apt-get: index unreachable" >&2\nexit 1\n', {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const source = fs.readFileSync(path.join(root, 'install.sh'), 'utf8').split('\n');
+    const callSite = source.findIndex((line) => line.includes('run sudo apt-get update')) + 1;
+    const insideRun = source.findIndex((line) => line.trim().startsWith('if ! "$dry_run"; then "$@"')) + 1;
+    assert.ok(callSite > 0 && insideRun > 0, 'Both lines must be findable');
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(10),
+        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.match(result.stderr, new RegExp(`line ${callSite}\\b`), 'Name the failing call site');
+    assert.doesNotMatch(result.stderr, new RegExp(`line ${insideRun}\\b`), 'run() is not the culprit');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// Every group in the map is offered. A hardcoded list in install.sh drops new groups silently.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-groups-smoke-'));
+    const mapText = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').trimEnd();
+    const extended = path.join(home, 'apt-map.tsv');
+    fs.writeFileSync(extended, `${mapText}\nextras\tcowsay\tcowsay\tboth\ta group added by the test to prove the offer is derived\n`);
+    const result = spawnSync('bash', [path.join(root, 'install.sh'), '--dry-run'], {
+        encoding: 'utf8', timeout: 30000, input: 'n\n'.repeat(60),
+        env: {...env(debian), HOME: home, DEBIAN_SETUP_MAP: extended},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /cowsay/, 'A group present in the map must be offered');
     fs.rmSync(home, {recursive: true, force: true});
 }
 

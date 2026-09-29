@@ -60,9 +60,10 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `bluez` | `bluez` | both |  |
 | `bluez` | `bluez-utils` | both | bluetoothctl ships in bluez itself; Debian has no separate utils package |
 | `blueman` | `blueman` | both |  |
-| `libpulse0` | `libpulse` | both | Debian suffixes the library package with its soname |
+| `pulseaudio-utils` | `libpulse` | both | The volume keys need the pactl binary, which Debian ships here, not in libpulse0 |
 | `psmisc` | `psmisc` | both |  |
-| `gsettings-desktop-schemas` | `gsettings-desktop-schemas` | both |  |
+| `gsettings-desktop-schemas` | `gsettings-desktop-schemas` | both | The schema the dark appearance setting writes to; the binary is in libglib2.0-bin |
+| `libglib2.0-bin` | `glib2` | both | Debian ships the gsettings binary in the -bin package, apart from the library |
 | `pipewire` | `pipewire` | both |  |
 | `pipewire-alsa` | `pipewire-alsa` | both |  |
 | `pipewire-jack` | `pipewire-jack` | both |  |

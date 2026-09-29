@@ -20,9 +20,10 @@ core-desktop	network-manager-applet	network-manager-gnome	both	nm-applet ships i
 core-desktop	bluez	bluez	both	-
 core-desktop	bluez-utils	bluez	both	bluetoothctl ships in bluez itself; Debian has no separate utils package
 core-desktop	blueman	blueman	both	-
-core-desktop	libpulse	libpulse0	both	Debian suffixes the library package with its soname
+core-desktop	libpulse	pulseaudio-utils	both	The volume keys need the pactl binary, which Debian ships here, not in libpulse0
 core-desktop	psmisc	psmisc	both	-
-core-desktop	gsettings-desktop-schemas	gsettings-desktop-schemas	both	-
+core-desktop	gsettings-desktop-schemas	gsettings-desktop-schemas	both	The schema the dark appearance setting writes to; the binary is in libglib2.0-bin
+core-desktop	glib2	libglib2.0-bin	both	Debian ships the gsettings binary in the -bin package, apart from the library
 audio	pipewire	pipewire	both	-
 audio	pipewire-alsa	pipewire-alsa	both	-
 audio	pipewire-jack	pipewire-jack	both	-
