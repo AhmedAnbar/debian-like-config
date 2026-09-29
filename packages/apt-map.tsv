@@ -59,3 +59,11 @@ dev	uv	-	none	Astral publishes no apt package; the official installer script is 
 shell	zsh	zsh	both	-
 shell	zsh-autosuggestions	zsh-autosuggestions	both	-
 shell	zsh-syntax-highlighting	zsh-syntax-highlighting	both	-
+editor-tools	nodejs	nodejs	both	Mason language servers need Node
+editor-tools	npm	npm	both	-
+editor-tools	go	golang	both	Debian names the Go toolchain golang
+editor-tools	ripgrep	ripgrep	both	-
+editor-tools	fd	fd-find	both	Debian installs the binary as fdfind; the Neovim configuration falls back to ripgrep
+editor-tools	unzip	unzip	both	-
+editor-tools	lazygit	lazygit	both	-
+editor-tools	ttf-jetbrains-mono-nerd	fonts-jetbrains-mono	both	Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted

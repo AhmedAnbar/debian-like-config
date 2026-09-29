@@ -99,6 +99,14 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `zsh` | `zsh` | both |  |
 | `zsh-autosuggestions` | `zsh-autosuggestions` | both |  |
 | `zsh-syntax-highlighting` | `zsh-syntax-highlighting` | both |  |
+| `nodejs` | `nodejs` | both | Mason language servers need Node |
+| `npm` | `npm` | both |  |
+| `golang` | `go` | both | Debian names the Go toolchain golang |
+| `ripgrep` | `ripgrep` | both |  |
+| `fd-find` | `fd` | both | Debian installs the binary as fdfind; the Neovim configuration falls back to ripgrep |
+| `unzip` | `unzip` | both |  |
+| `lazygit` | `lazygit` | both |  |
+| `fonts-jetbrains-mono` | `ttf-jetbrains-mono-nerd` | both | Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted |
 
 ## Backups and undo
 

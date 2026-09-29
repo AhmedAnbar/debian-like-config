@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const lines = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').trim().split('\n');
 
 assert.equal(lines[0], ['group', 'arch', 'apt', 'where', 'note'].join('\t'), 'Header row');
-const groups = new Set(['core-desktop', 'audio', 'input-emoji', 'browser-files', 'dev', 'shell']);
+const groups = new Set(['core-desktop', 'audio', 'input-emoji', 'browser-files', 'dev', 'shell', 'editor-tools']);
 const places = new Set(['both', 'debian', 'ubuntu', 'none']);
 const archSeen = new Set();
 let none = 0;
