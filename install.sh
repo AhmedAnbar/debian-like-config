@@ -56,3 +56,48 @@ printf 'Debian desktop setup — packages, configuration and services\n'
 printf 'Copyright (C) 2026 AhmedAnbar. GPL-3.0-only; no warranty. See LICENSE for redistribution terms.\n'
 printf 'Detected %s (%s family); installing with apt.\n' "${distro_name:-$distro_id}" "$family"
 printf 'Existing configuration files are backed up before replacement.\n'
+map="$bundle_dir/packages/apt-map.tsv"
+[[ -r "$map" ]] || { printf 'Missing package map: %s\n' "$map" >&2; exit 1; }
+declare -A group_label=(
+    [core-desktop]='Core i3 desktop and all configuration dependencies'
+    [audio]='PipeWire audio'
+    [input-emoji]='Brightness keys, emoji fonts and clipboard'
+    [browser-files]='Browser and file utilities'
+    [dev]='Development and command-line utilities (PHP, Composer, mkcert)'
+    [shell]='Zsh and its completion plugins'
+)
+packages=()
+unavailable=()
+skipped=()
+group() {
+    local id=$1 list=() g arch apt where note
+    while IFS=$'\t' read -r g arch apt where note; do
+        [[ "$g" == "$id" ]] || continue
+        case "$where" in
+            none) unavailable+=("$arch ($note)") ;;
+            both) list+=("$apt") ;;
+            "$release") list+=("$apt") ;;
+            *) skipped+=("$apt ($note)") ;;
+        esac
+    done < <(tail -n +2 -- "$map")
+    (( ${#list[@]} )) || return 0
+    mapfile -t list < <(printf '%s\n' "${list[@]}" | sort -u)
+    printf '\n%s\n  %s\n' "${group_label[$id]}" "${list[*]}"
+    if ask 'Include these packages?'; then packages+=("${list[@]}"); fi
+}
+for id in core-desktop audio input-emoji browser-files dev shell; do group "$id"; done
+if (( ${#unavailable[@]} )); then
+    printf '\nNot packaged on %s: %s\n' "$family" "${unavailable[*]}"
+fi
+if (( ${#skipped[@]} )); then
+    printf 'Skipped on %s: %s\n' "$family" "${skipped[*]}"
+fi
+if (( ${#packages[@]} )); then
+    mapfile -t packages < <(printf '%s\n' "${packages[@]}" | sort -u)
+    printf '\nSelected packages: %s\n' "${packages[*]}"
+    if ask 'Update the package lists and install the selected packages?'; then
+        # A failed update must stop here: installing against a stale index is worse.
+        run sudo apt-get update
+        run sudo apt-get install -y "${packages[@]}"
+    fi
+fi

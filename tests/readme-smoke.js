@@ -31,4 +31,14 @@ assert.match(logo, /assets\/logo\.png/, 'Say where the generated image goes');
 assert.match(logo, /[Dd]ebian red|#[Aa]80030|#[Dd]70[Aa]53/, 'The prompt must name the Debian red');
 assert.match(logo, /do not replicate|not replicate|avoid replicating/i,
     'The prompt must refuse to copy the official Debian logo');
+
+// Every package that can be installed must be documented, as in the Arch repository.
+const rows = read('packages/apt-map.tsv').trim().split('\n').slice(1).map((line) => line.split('\t'));
+for (const [, arch, apt, where] of rows) {
+    const documented = apt === '-' ? arch : apt;
+    assert.ok(readme.includes('`' + documented + '`'),
+        `Undocumented package: ${documented} (${where})`);
+}
+assert.match(readme, /not packaged/i, 'The catalogue must mark the unavailable packages');
+
 console.log('readme-smoke: all checks passed');

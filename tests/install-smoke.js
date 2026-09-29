@@ -58,5 +58,44 @@ for (const [file, family] of cases) {
 // A preview writes nothing at all.
 assert.deepEqual(fs.readdirSync(scratch).sort(),
     ['bin', 'debian', 'fedora', 'idless', 'mint', 'ubuntu'], 'A preview must not create files');
+
+// Package groups come from the map, and the map's gaps must be visible.
+const accept = 'y\n'.repeat(60);
+const debianPreview = install(['--dry-run'], debian, accept);
+assert.equal(debianPreview.status, 0, debianPreview.stderr);
+const ubuntuPreview = install(['--dry-run'], ubuntu, accept);
+assert.equal(ubuntuPreview.status, 0, ubuntuPreview.stderr);
+const selected = (result) => result.stdout.split('\n').find((line) => line.startsWith('Selected packages:'));
+
+// Debian gets the ESR browser; Ubuntu must not be offered the snap transitional package.
+assert.match(selected(debianPreview), /\bfirefox-esr\b/);
+assert.doesNotMatch(selected(ubuntuPreview), /\bfirefox\b/, 'Never install apt firefox on Ubuntu: it is a snap stub');
+assert.match(ubuntuPreview.stdout, /Skipped on Ubuntu:[^\n]*firefox-esr/);
+assert.match(ubuntuPreview.stdout, /Mozilla apt repository/, 'Say what replaces it');
+
+// where=none rows are reported, never installed, and never leak the - placeholder.
+for (const preview of [debianPreview, ubuntuPreview]) {
+    assert.match(preview.stdout, /Not packaged on \w+:[^\n]*rofi-emoji/);
+    assert.match(preview.stdout, /Not packaged on \w+:[^\n]*\buv\b/);
+    assert.doesNotMatch(selected(preview), /(^|\s)-(\s|$)/, 'The - placeholder must never reach apt');
+    // bluez appears twice in the map (bluez and bluez-utils both map to it).
+    assert.equal(selected(preview).match(/\bbluez\b/g).length, 1, 'Duplicate apt names are collapsed');
+    assert.match(preview.stdout, /sudo apt-get update/);
+    assert.match(preview.stdout, /sudo apt-get install/);
+}
+
+// A failing apt-get update must stop the run: never report an install that did not happen.
+const failing = path.join(scratch, 'failbin');
+fs.mkdirSync(failing);
+fs.writeFileSync(path.join(failing, 'apt-get'),
+    '#!/bin/sh\n[ "$1" = update ] && exit 100\nexit 0\n', {mode: 0o755});
+fs.writeFileSync(path.join(failing, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+const broken = spawnSync('bash', [path.join(root, 'install.sh')], {
+    encoding: 'utf8', timeout: 30000, input: accept,
+    env: {...env(debian), PATH: `${failing}:${process.env.PATH}`},
+});
+assert.notEqual(broken.status, 0, 'A failed update must fail the run');
+assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the install after a failed update');
+
 fs.rmSync(scratch, {recursive: true, force: true});
 console.log('install-smoke: all checks passed');
