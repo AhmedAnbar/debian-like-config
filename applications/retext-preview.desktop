@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ReText Preview
+Comment=View rendered Markdown; use ReText from the launcher to edit
+Exec=retext --preview %F
+Icon=retext
+Terminal=false
+MimeType=text/markdown;
+StartupWMClass=ReText
+NoDisplay=true

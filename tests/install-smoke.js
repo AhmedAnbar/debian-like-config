@@ -97,5 +97,59 @@ const broken = spawnSync('bash', [path.join(root, 'install.sh')], {
 assert.notEqual(broken.status, 0, 'A failed update must fail the run');
 assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the install after a failed update');
 
+// Configuration installation, for real, inside a scratch HOME.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-config-smoke-'));
+    const outside = path.join(home, 'dotfiles-i3-config');
+    fs.writeFileSync(outside, 'original i3 config\n');
+    fs.mkdirSync(path.join(home, '.config', 'i3'), {recursive: true});
+    // A dotfiles checkout is usually symlinked into place: replace the link, not its target.
+    fs.symlinkSync(outside, path.join(home, '.config', 'i3', 'config'));
+    const real = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(80),
+        env: {...env(debian), HOME: home},
+    });
+    assert.equal(real.status, 0, real.stderr);
+    const installed = path.join(home, '.config', 'i3', 'config');
+    assert.ok(!fs.lstatSync(installed).isSymbolicLink(), 'The symlink itself must be replaced');
+    assert.equal(fs.readFileSync(installed, 'utf8'),
+        fs.readFileSync(path.join(root, 'config/i3/config'), 'utf8'), 'The bundled file is installed');
+    assert.equal(fs.readFileSync(outside, 'utf8'), 'original i3 config\n',
+        'Writing through the link would have overwritten the dotfiles checkout');
+    const backups = fs.readdirSync(path.join(home, '.local/state/debian-desktop-setup'));
+    assert.equal(backups.length, 1, 'One timestamped backup directory');
+    assert.equal(fs.readFileSync(path.join(home, '.local/state/debian-desktop-setup',
+        backups[0], 'i3/config'), 'utf8'), 'original i3 config\n', 'The original is recoverable');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// The emoji picker must explain the missing Debian plugin instead of opening nothing.
+{
+    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-emoji-smoke-'));
+    const stubs = path.join(probe, 'bin');
+    fs.mkdirSync(stubs);
+    const log = path.join(probe, 'log');
+    fs.writeFileSync(path.join(stubs, 'rofi'), `#!/bin/sh\necho "rofi $*" >> ${log}\n`, {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'notify-send'), `#!/bin/sh\necho "notify $*" >> ${log}\n`, {mode: 0o755});
+    const emoji = (pluginDir) => {
+        fs.writeFileSync(log, '');
+        const result = spawnSync('sh', [path.join(root, 'config/i3/emoji.sh')], {
+            encoding: 'utf8', timeout: 20000,
+            env: {...process.env, PATH: `${stubs}:/usr/bin:/bin`, ROFI_PLUGIN_PATH: pluginDir},
+        });
+        assert.equal(result.status, 0, result.stderr);
+        return {log: fs.readFileSync(log, 'utf8'), stderr: result.stderr};
+    };
+    const missing = emoji(path.join(probe, 'empty'));
+    assert.doesNotMatch(missing.log, /^rofi/m, 'Without the plugin, Rofi must not be started');
+    assert.match(missing.log, /^notify/m, 'The user is told why');
+    assert.match(missing.stderr, /emoji plugin/);
+    const present = path.join(probe, 'plugins');
+    fs.mkdirSync(present);
+    fs.writeFileSync(path.join(present, 'emoji.so'), '');
+    assert.match(emoji(present).log, /^rofi .*-modi emoji/m, 'With the plugin, the picker opens');
+    fs.rmSync(probe, {recursive: true, force: true});
+}
+
 fs.rmSync(scratch, {recursive: true, force: true});
 console.log('install-smoke: all checks passed');

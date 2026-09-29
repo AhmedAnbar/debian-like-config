@@ -1,0 +1,57 @@
+snippet region "add region"
+  // region: --${1}
+  ${0}
+  // endregion: --${2}
+
+snippet dphandler "Debug print handler"
+	println!("->> {:<12} - ${0}", "HANDLER");
+
+snippet uer "Use self Error & Respone"
+	use crate::{Error, Result};
+
+
+snippet drm "Debug response mapper"
+	println!("->> {:<12} - ${0}", "RES_MAPPER");
+
+snippet dmw "Debug middleware"
+	println!("->> {:<12} - ${0}", "MIDDLEWARE");
+
+snippet dd "Debug "
+	println!("->> {:<12} - ${1}", "${0}");
+
+snippet err "Error Boilerplate"
+	pub type Result<T> = core::result::Result<T, Error>;
+	#[derive(Debug)]
+	pub enum Error {}
+
+	// region:    --- Error Boilerplate
+	impl core::fmt::Display for Error {
+		fn fmt(
+			&self,
+			fmt: &mut core::fmt::Formatter,
+		) -> core::result::Result<(), core::fmt::Error> {
+			write!(fmt, "{self:?}")
+		}
+	}
+
+	impl std::error::Error for Error {}
+	// endregion: --- Error Boilerplate
+
+
+snippet rustUnitTest "Rust unit test"
+	// region: -- Tests
+	#[cfg(test)]
+	mod tests {
+		#![allow(unused)]
+		use super::*;
+		use anyhow::Result;
+
+		${0}
+	}
+	// endregion: -- Tests
+
+snippet rustTestFunction "Rust test function"
+	#[tokio::test]
+  async fn test_${0}() -> Result<()> {
+		Ok(())
+	}

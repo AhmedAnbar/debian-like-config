@@ -4,6 +4,7 @@
 set -Eeuo pipefail
 trap 'printf "Setup stopped at line %s. Review the error above before retrying.\n" "$LINENO" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+[[ -d "$bundle_dir/config" ]] || { printf 'Keep install.sh with its config folder.\n' >&2; exit 1; }
 dry_run=false
 case "${1:-}" in
     --dry-run) dry_run=true ;;
@@ -51,6 +52,22 @@ ask() {
 run() {
     printf '  '; printf '%q ' "$@"; printf '\n'
     if ! "$dry_run"; then "$@"; fi
+}
+install_file() {
+    local source=$1 relative=$2 destination="$target_config/$2"
+    if [[ -f "$destination" ]] && cmp -s "$source" "$destination"; then
+        printf 'Unchanged: %s\n' "$destination"; return
+    fi
+    if [[ -e "$destination" || -L "$destination" ]]; then
+        ask "Back up and replace $destination?" || return 0
+        run mkdir -p -- "$backup_dir/$(dirname -- "$relative")"
+        if [[ ! -e "$backup_dir/$relative" && ! -L "$backup_dir/$relative" ]]; then
+            run cp -a -- "$destination" "$backup_dir/$relative"
+        fi
+        # Replace a symlink itself rather than writing through it into a dotfiles checkout.
+        run unlink -- "$destination"
+    fi
+    run install -Dm644 -- "$source" "$destination"
 }
 printf 'Debian desktop setup — packages, configuration and services\n'
 printf 'Copyright (C) 2026 AhmedAnbar. GPL-3.0-only; no warranty. See LICENSE for redistribution terms.\n'
@@ -100,4 +117,43 @@ if (( ${#packages[@]} )); then
         run sudo apt-get update
         run sudo apt-get install -y "${packages[@]}"
     fi
+fi
+if ask 'Install the desktop configuration bundle (each existing changed file asks before replacement)?'; then
+    while IFS= read -r -d '' source <&3; do
+        relative=${source#"$bundle_dir/config/"}
+        install_file "$source" "$relative"
+    done 3< <(find "$bundle_dir/config" -path "$bundle_dir/config/nvim" -prune -o -type f -print0 | sort -z)
+    # The scripts must stay executable; install_file writes mode 644 for plain configuration.
+    for script in i3/brightness.sh i3/emoji.sh i3/launcher.sh i3/touchpad.sh; do
+        [[ -f "$bundle_dir/config/$script" ]] || continue
+        run install -Dm755 -- "$bundle_dir/config/$script" "$target_config/$script"
+    done
+    if ! "$dry_run" && command -v i3 >/dev/null; then run i3 -C -c "$target_config/i3/config"; fi
+fi
+if ask 'Choose the Rofi theme for the installed launcher?'; then
+    printf '1) Catppuccin  2) Nord  3) Dracula\n'
+    read -r -p 'Theme [1]: ' choice
+    case "$choice" in
+        2) theme=i3-theme-nord.rasi ;;
+        3) theme=i3-theme-dracula.rasi ;;
+        *) theme=i3-theme.rasi ;;
+    esac
+    # A separate pointer file means switching themes never edits the i3 bindings.
+    if ! "$dry_run"; then
+        theme_temp=$(mktemp)
+        printf '@theme "%s"\n' "$theme" > "$theme_temp"
+        install_file "$theme_temp" rofi/active-theme.rasi
+        unlink "$theme_temp"
+    else
+        printf 'Would select %s\n' "$theme"
+    fi
+fi
+if ask 'Open Markdown (.md) files rendered in ReText preview by default?'; then
+    viewer_entry="$HOME/.local/share/applications/retext-preview.desktop"
+    if [[ -f "$viewer_entry" ]] && cmp -s -- "$bundle_dir/applications/retext-preview.desktop" "$viewer_entry"; then
+        printf 'Unchanged: %s\n' "$viewer_entry"
+    else
+        run install -Dm644 -- "$bundle_dir/applications/retext-preview.desktop" "$viewer_entry"
+    fi
+    if command -v xdg-mime >/dev/null; then run xdg-mime default retext-preview.desktop text/markdown; fi
 fi

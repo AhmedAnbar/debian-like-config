@@ -1,0 +1,8 @@
+require("anbar.user.options")
+require("anbar.user.lazy")
+require("anbar.user.keymaps")
+require("anbar.user.highlight_yank")
+--require("anbar.user.format_on_save")
+require("anbar.user.toggle_diagnostics")
+--require("anbar.user.toggle_eslint")
+require("anbar.user.vertical_help")

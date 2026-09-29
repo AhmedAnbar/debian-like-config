@@ -1,0 +1,7 @@
+configuration {
+    modi: "drun,run,window";
+    show-icons: true;
+    font: "Noto Sans 12";
+    drun-display-format: "{name}";
+    display-drun: "Apps";
+}
