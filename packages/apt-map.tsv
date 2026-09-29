@@ -1,0 +1,61 @@
+group	arch	apt	where	note
+core-desktop	i3-wm	i3-wm	both	-
+core-desktop	i3status	i3status	both	-
+core-desktop	i3lock	i3lock	both	-
+core-desktop	xorg-server	xserver-xorg	both	Debian splits the X server metapackage under a different name
+core-desktop	xorg-xinit	xinit	both	startx and xinitrc handling
+core-desktop	xorg-xinput	xinput	both	Debian drops the xorg- prefix from the X utility packages
+core-desktop	xorg-setxkbmap	x11-xkb-utils	both	setxkbmap ships inside x11-xkb-utils
+core-desktop	xorg-xrandr	x11-xserver-utils	both	xrandr ships inside x11-xserver-utils
+core-desktop	xf86-input-libinput	xserver-xorg-input-libinput	both	Debian names the X input drivers xserver-xorg-input-*
+core-desktop	kitty	kitty	both	-
+core-desktop	rofi	rofi	both	Debian 13 has 1.7.5 and Ubuntu 26.04 has 2.0.0; both read the bundled themes
+core-desktop	picom	picom	both	-
+core-desktop	flameshot	flameshot	both	-
+core-desktop	noto-fonts	fonts-noto	both	Debian font packages are prefixed fonts-
+core-desktop	dex	dex	both	-
+core-desktop	xss-lock	xss-lock	both	-
+core-desktop	networkmanager	network-manager	both	Debian spells the NetworkManager package with a hyphen
+core-desktop	network-manager-applet	network-manager-gnome	both	nm-applet ships in network-manager-gnome
+core-desktop	bluez	bluez	both	-
+core-desktop	bluez-utils	bluez	both	bluetoothctl ships in bluez itself; Debian has no separate utils package
+core-desktop	blueman	blueman	both	-
+core-desktop	libpulse	libpulse0	both	Debian suffixes the library package with its soname
+core-desktop	psmisc	psmisc	both	-
+core-desktop	gsettings-desktop-schemas	gsettings-desktop-schemas	both	-
+audio	pipewire	pipewire	both	-
+audio	pipewire-alsa	pipewire-alsa	both	-
+audio	pipewire-jack	pipewire-jack	both	-
+audio	pipewire-pulse	pipewire-pulse	both	-
+audio	wireplumber	wireplumber	both	-
+audio	alsa-utils	alsa-utils	both	-
+input-emoji	brightnessctl	brightnessctl	both	-
+input-emoji	rofi-emoji	-	none	Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh reports it is unavailable and phase 2 decides on an upstream build
+input-emoji	noto-fonts-emoji	fonts-noto-color-emoji	both	Debian names the colour emoji font separately
+input-emoji	xclip	xclip	both	-
+browser-files	firefox	firefox-esr	debian	Debian ships the ESR package; Ubuntu's apt firefox is only a snap transitional package, so phase 3 adds the Mozilla apt repository instead
+browser-files	thunar	thunar	both	-
+browser-files	thunar-archive-plugin	thunar-archive-plugin	both	-
+browser-files	file-roller	file-roller	both	-
+browser-files	gvfs	gvfs	both	-
+browser-files	gpicview	gpicview	both	-
+browser-files	xdg-user-dirs	xdg-user-dirs	both	-
+browser-files	xdg-utils	xdg-utils	both	-
+browser-files	retext	retext	both	-
+dev	base-devel	build-essential	both	build-essential is the Debian equivalent metapackage
+dev	git	git	both	-
+dev	github-cli	gh	both	Debian and Ubuntu both package the GitHub CLI as gh
+dev	vim	vim	both	-
+dev	neovim	neovim	both	Debian 13 has 0.10.4 and Ubuntu 26.04 has 0.11.6; setup-nvim.sh installs the upstream tarball when apt is older than 0.11
+dev	dialog	dialog	both	-
+dev	php	php-cli	both	The Debian php metapackage pulls Apache; php-cli is the command-line interpreter
+dev	composer	composer	both	-
+dev	curl	curl	both	-
+dev	openssh	openssh-client	both	A desktop needs the client; the server is not installed by default
+dev	mkcert	mkcert	both	-
+dev	nss	libnss3-tools	both	certutil, which mkcert needs, lives in libnss3-tools
+dev	inetutils	iputils-ping	both	Debian splits the inetutils tools; ping is the one this desktop uses
+dev	uv	-	none	Astral publishes no apt package; the official installer script is used in a later phase
+shell	zsh	zsh	both	-
+shell	zsh-autosuggestions	zsh-autosuggestions	both	-
+shell	zsh-syntax-highlighting	zsh-syntax-highlighting	both	-
