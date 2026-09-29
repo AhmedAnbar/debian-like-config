@@ -20,7 +20,9 @@ if ask 'Install the Neovim tooling (Node, Go, ripgrep, fd, fonts) with apt?'; th
     run sudo apt-get install -y "${tools[@]}" git build-essential php-cli composer curl unzip xclip
 fi
 # This configuration needs Neovim 0.11 or newer; Debian 13 ships 0.10.4.
-candidate=$(apt-cache policy neovim 2>/dev/null | awk '/Candidate:/{print $2; exit}')
+# pipefail would abort the script if apt-cache is missing or neovim is not indexed;
+# an unknown version simply means apt cannot be trusted, which the fallback handles.
+candidate=$(apt-cache policy neovim 2>/dev/null | awk '/Candidate:/{print $2; exit}' || true)
 version=${candidate#*:}; version=${version%%-*}
 major=${version%%.*}; rest=${version#*.}; minor=${rest%%.*}
 new_enough=false

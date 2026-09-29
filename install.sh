@@ -157,3 +157,37 @@ if ask 'Open Markdown (.md) files rendered in ReText preview by default?'; then
     fi
     if command -v xdg-mime >/dev/null; then run xdg-mime default retext-preview.desktop text/markdown; fi
 fi
+if ask 'Set the dark appearance preference in your current desktop session?'; then
+    if command -v gsettings >/dev/null; then
+        run gsettings set org.gnome.desktop.interface color-scheme prefer-dark
+    else
+        printf 'Install gsettings-desktop-schemas and rerun to set the desktop preference.\n'
+    fi
+fi
+# Run as the desktop user: sudo would create the CA in root's home, unseen by your browsers.
+printf '\nmkcert creates a local certificate authority trusted by this system and your browsers.\n'
+printf 'Keep rootCA-key.pem private: anyone with it can issue certificates this machine trusts.\n'
+if ask 'Create and trust the mkcert local CA for HTTPS development (mkcert -install)?'; then
+    if ! "$dry_run" && ! command -v mkcert >/dev/null; then
+        printf 'mkcert is not installed. Accept the development group, then rerun this step.\n' >&2
+    else
+        run mkcert -install
+    fi
+fi
+for service in NetworkManager.service bluetooth.service fstrim.timer; do
+    if ask "Enable and start $service?"; then run sudo systemctl enable --now "$service"; fi
+done
+if ask 'Start and enable the PipeWire sockets and WirePlumber for this user?'; then
+    run systemctl --user enable --now pipewire.socket pipewire-pulse.socket wireplumber.service
+fi
+if ask 'Set up Zsh, Oh My Zsh, autosuggestions and syntax highlighting?'; then
+    if "$dry_run"; then bash "$bundle_dir/setup-zsh.sh" --dry-run; else bash "$bundle_dir/setup-zsh.sh"; fi
+fi
+if ask 'Restore Neovim and its plugins?'; then
+    if "$dry_run"; then bash "$bundle_dir/setup-nvim.sh" --dry-run; else bash "$bundle_dir/setup-nvim.sh"; fi
+fi
+printf '\nFinished. Backups, when needed: %s\n' "$backup_dir"
+printf 'Log out and log in to apply startup programs. Alt+D: Rofi launcher; Alt+Shift+S: screenshot.\n'
+printf 'Keyboard: English (US) + Arabic. Shift+Caps Lock switches layouts after login.\n'
+printf 'No login manager is installed in this phase: use the one you have, or startx with the bundled xinit.\n'
+printf 'Sway, third-party applications and system extras arrive in later phases.\n'

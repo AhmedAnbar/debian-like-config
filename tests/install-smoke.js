@@ -105,9 +105,17 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.mkdirSync(path.join(home, '.config', 'i3'), {recursive: true});
     // A dotfiles checkout is usually symlinked into place: replace the link, not its target.
     fs.symlinkSync(outside, path.join(home, '.config', 'i3', 'config'));
+    // Stub every system tool the installer can reach: a real run must never touch
+    // this machine's services or trust store just because a later step exists.
+    const homeBin = path.join(home, 'bin');
+    fs.mkdirSync(homeBin);
+    for (const name of ['apt-get', 'systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
+        fs.writeFileSync(path.join(homeBin, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(homeBin, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     const real = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(80),
-        env: {...env(debian), HOME: home},
+        env: {...env(debian), HOME: home, PATH: `${homeBin}:${process.env.PATH}`},
     });
     assert.equal(real.status, 0, real.stderr);
     const installed = path.join(home, '.config', 'i3', 'config');
@@ -149,6 +157,33 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.writeFileSync(path.join(present, 'emoji.so'), '');
     assert.match(emoji(present).log, /^rofi .*-modi emoji/m, 'With the plugin, the picker opens');
     fs.rmSync(probe, {recursive: true, force: true});
+}
+
+// Services, delegation and the closing summary, against stubs.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-services-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    const log = path.join(home, 'calls');
+    for (const name of ['apt-get', 'systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
+        fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\necho "${name} $*" >> ${log}\nexit 0\n`, {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 120000, input: 'y\n'.repeat(120),
+        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = fs.readFileSync(log, 'utf8');
+    for (const unit of ['NetworkManager.service', 'bluetooth.service', 'fstrim.timer']) {
+        assert.match(calls, new RegExp(`systemctl enable --now ${unit.replace('.', '\\.')}`), `Missing unit: ${unit}`);
+    }
+    assert.match(calls, /systemctl --user enable --now pipewire\.socket/);
+    assert.match(calls, /gsettings set org\.gnome\.desktop\.interface color-scheme prefer-dark/);
+    // The summary has to name the backup directory: it is the only way back.
+    assert.match(result.stdout, /Backups, when needed: .*\.local\/state\/debian-desktop-setup/);
+    assert.match(result.stdout, /Alt\+D/, 'Tell the user how to open the launcher');
+    fs.rmSync(home, {recursive: true, force: true});
 }
 
 fs.rmSync(scratch, {recursive: true, force: true});

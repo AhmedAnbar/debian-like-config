@@ -108,6 +108,28 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `lazygit` | `lazygit` | both |  |
 | `fonts-jetbrains-mono` | `ttf-jetbrains-mono-nerd` | both | Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted |
 
+## Keyboard
+
+| Keys | Action |
+| --- | --- |
+| Alt+Enter | Kitty terminal |
+| Alt+D | Rofi launcher with the selected theme |
+| Alt+Shift+Q | Close the focused window |
+| Shift+Caps Lock | Toggle English (US) / Arabic |
+| Alt+Shift+S | Select a region and save a screenshot |
+| Super+period | Emoji picker (needs a self-built `rofi-emoji`; see the catalogue) |
+| Alt+Shift+C or Alt+Shift+R | Reload the i3 configuration |
+| Alt+Shift+E | Log out |
+
+## Services
+
+The installer offers to enable `NetworkManager.service`, `bluetooth.service` and
+`fstrim.timer`, plus the user PipeWire sockets and WirePlumber. Nothing is
+enabled without a prompt.
+
+No login manager is part of this phase: keep the one your installation already
+has, or start the session with `startx` using the bundled `xinit`.
+
 ## Backups and undo
 
 Every replaced file is copied to `~/.local/state/debian-desktop-setup/<timestamp>-<pid>/`
