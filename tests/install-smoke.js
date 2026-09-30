@@ -67,11 +67,19 @@ const ubuntuPreview = install(['--dry-run'], ubuntu, accept);
 assert.equal(ubuntuPreview.status, 0, ubuntuPreview.stderr);
 const selected = (result) => result.stdout.split('\n').find((line) => line.startsWith('Selected packages:'));
 
-// Debian gets the ESR browser; Ubuntu must not be offered the snap transitional package.
+// Each release gets the browser it actually has: Debian the ESR package, Ubuntu the
+// apt package whose job is to install the Firefox snap. Neither gets the other's.
 assert.match(selected(debianPreview), /\bfirefox-esr\b/);
-assert.doesNotMatch(selected(ubuntuPreview), /\bfirefox\b/, 'Never install apt firefox on Ubuntu: it is a snap stub');
+assert.doesNotMatch(selected(debianPreview), /\bfirefox(?!-esr)\b/, 'Debian has no apt firefox');
+assert.match(selected(ubuntuPreview), /\bfirefox\b/, 'Ubuntu installs Firefox through its snap-installing apt package');
+assert.doesNotMatch(selected(ubuntuPreview), /\bfirefox-esr\b/, 'Ubuntu has no firefox-esr');
+// snapd goes on both: Ubuntu needs it for the browser, Debian for phase 3.
+for (const preview of [debianPreview, ubuntuPreview]) {
+    assert.match(selected(preview), /\bsnapd\b/, 'snapd is offered on both releases');
+}
 assert.match(ubuntuPreview.stdout, /Skipped on Ubuntu:[^\n]*firefox-esr/);
-assert.match(ubuntuPreview.stdout, /Mozilla apt repository/, 'Say what replaces it');
+assert.match(ubuntuPreview.stdout, /Skipped on Ubuntu:[^\n]*Debian ships the ESR package/,
+    'The skipped line must say why, and the reason is no longer a Mozilla repository');
 
 // where=none rows are reported, never installed, and never leak the - placeholder.
 for (const preview of [debianPreview, ubuntuPreview]) {
@@ -81,7 +89,7 @@ for (const preview of [debianPreview, ubuntuPreview]) {
     // bluez appears twice in the map (bluez and bluez-utils both map to it).
     assert.equal(selected(preview).match(/\bbluez\b/g).length, 1, 'Duplicate apt names are collapsed');
     assert.match(preview.stdout, /sudo apt-get update/);
-    assert.match(preview.stdout, /sudo apt-get install/);
+    assert.match(preview.stdout, /sudo env DEBIAN_FRONTEND=noninteractive apt-get install/);
 }
 
 // A failing apt-get update must stop the run: never report an install that did not happen.
@@ -280,6 +288,39 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /cowsay/, 'A group present in the map must be offered');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// Ubuntu's firefox package installs a snap from its postinst: it must not be able to
+// hang on a debconf prompt, and a failure there must not take the whole run down.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-snap-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    const log = path.join(home, 'apt-env');
+    // The stub fails the way an offline snap installation does, and records its environment.
+    fs.writeFileSync(path.join(stubs, 'apt-get'), `#!/bin/sh
+if [ "$1" = install ]; then
+  echo "DEBIAN_FRONTEND=$DEBIAN_FRONTEND" >> ${log}
+  echo 'error: cannot install "firefox": Post-refresh hook failed' >&2
+  exit 1
+fi
+exit 0
+`, {mode: 0o755});
+    for (const name of ['systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git', 'snap']) {
+        fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(120),
+        env: {...env(ubuntu), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.match(fs.readFileSync(log, 'utf8'), /DEBIAN_FRONTEND=noninteractive/,
+        'The install step must be unattended: the firefox package prompts through debconf');
+    assert.match(result.stdout, /Steps that failed:[\s\S]*apt-get install/,
+        'A failed package step is reported, not swallowed');
+    assert.ok(fs.existsSync(path.join(home, '.config', 'i3', 'config')),
+        'The configuration is installed even when the packages could not be');
     fs.rmSync(home, {recursive: true, force: true});
 }
 

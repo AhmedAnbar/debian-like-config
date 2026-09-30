@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const lines = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').trim().split('\n');
 
 assert.equal(lines[0], ['group', 'arch', 'apt', 'where', 'note'].join('\t'), 'Header row');
-const groups = new Set(['core-desktop', 'audio', 'input-emoji', 'browser-files', 'dev', 'shell', 'editor-tools']);
+const groups = new Set(['core-desktop', 'audio', 'input-emoji', 'browser-files', 'dev', 'shell', 'editor-tools', 'sway']);
 const places = new Set(['both', 'debian', 'ubuntu', 'none']);
 const archSeen = new Set();
 let none = 0;
@@ -17,8 +17,16 @@ for (const line of lines.slice(1)) {
     const [group, arch, apt, where, note] = columns;
     assert.ok(groups.has(group), 'Unknown group: ' + line);
     assert.ok(places.has(where), 'Unknown where: ' + line);
-    assert.ok(!archSeen.has(arch) || arch === '-', 'Duplicate arch package: ' + arch);
-    archSeen.add(arch);
+    // One row per Arch name per release. A package may resolve to a different apt
+    // name on each release, but never to two names on the same one.
+    if (arch !== '-') {
+        for (const target of (where === 'both' ? ['debian', 'ubuntu'] : [where])) {
+            if (target === 'none') continue;
+            const key = `${arch}@${target}`;
+            assert.ok(!archSeen.has(key), `Two rows claim ${arch} on ${target}`);
+            archSeen.add(key);
+        }
+    }
     if (where === 'none') {
         none++;
         assert.equal(apt, '-', 'An unavailable package has no apt name: ' + line);
@@ -39,11 +47,33 @@ const aptNames = new Set(lines.slice(1).map((line) => line.split('\t')[2]));
 for (const [command, provider] of [['pactl', 'pulseaudio-utils'], ['gsettings', 'libglib2.0-bin']]) {
     assert.ok(aptNames.has(provider), `${command} lives in ${provider}; the map must install it`);
 }
-// Every group the map names must have a label in install.sh, or it is offered anonymously.
+// Every group must be offered by name somewhere. install.sh labels the groups it
+// offers; editor-tools belongs to setup-nvim.sh and sway to setup-sway.sh, and each
+// is named by the script that owns it.
+const owners = {'editor-tools': 'setup-nvim.sh', sway: 'setup-sway.sh'};
 const installSource = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
 const labelled = new Set([...installSource.matchAll(/^\s*\[([a-z-]+)\]=/gm)].map((m) => m[1]));
 for (const group of new Set(lines.slice(1).map((line) => line.split('\t')[0]))) {
-    if (group === 'editor-tools') continue;
+    // A group another script offers is that script's own test's business: this file
+    // reads the map, and setup-sway-smoke.js proves the sway group reaches the user
+    // by checking the packages it prints.
+    if (owners[group]) continue;
     assert.ok(labelled.has(group), `install.sh has no label for the map group ${group}`);
+}
+// The browser is the first package with a different apt name on each release.
+const browsers = lines.slice(1).map((l) => l.split('\t')).filter(([, arch]) => arch === 'firefox');
+assert.deepEqual(browsers.map(([, , apt, where]) => `${apt}/${where}`).sort(),
+    ['firefox-esr/debian', 'firefox/ubuntu'].sort(), 'Debian gets the ESR package, Ubuntu the snap installer');
+// snapd goes on both releases: the Ubuntu browser is a snap, and phase 3 will want it.
+const aptAll = new Set(lines.slice(1).map((l) => l.split('\t')[2]));
+for (const name of ['snapd', 'sway', 'swaybg', 'swayidle', 'swaylock', 'waybar', 'mako-notifier',
+    'grim', 'slurp', 'wl-clipboard', 'cliphist', 'xwayland', 'mate-polkit', 'wtype', 'xdotool',
+    'unicode-data', 'qtwayland5', 'qt6-wayland', 'xdg-desktop-portal-wlr', 'xdg-desktop-portal-gtk']) {
+    assert.ok(aptAll.has(name), `The Sway session needs ${name}`);
+}
+// Every sway-group row is a real apt name, never a where=none placeholder.
+for (const [group, , apt, where] of lines.slice(1).map((l) => l.split('\t'))) {
+    if (group !== 'sway') continue;
+    assert.notEqual(where, 'none', `The sway group installs from apt: ${apt}`);
 }
 console.log('apt-map-smoke: all checks passed');

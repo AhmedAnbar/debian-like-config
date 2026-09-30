@@ -92,7 +92,9 @@ if (( ${#packages[@]} )); then
     if ask 'Update the package lists and install the selected packages?'; then
         # A failed update must stop here: installing against a stale index is worse.
         run sudo apt-get update
-        attempt sudo apt-get install -y "${packages[@]}"
+        # Ubuntu's firefox package installs a snap from its postinst and asks debconf
+        # about it; an installer the user is watching must not stop on that prompt.
+        attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
     fi
 fi
 if ask 'Install the desktop configuration bundle (each existing changed file asks before replacement)?'; then

@@ -71,10 +71,14 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `wireplumber` | `wireplumber` | both |  |
 | `alsa-utils` | `alsa-utils` | both |  |
 | `brightnessctl` | `brightnessctl` | both |  |
-| `rofi-emoji` (not packaged) | `rofi-emoji` | none | Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh reports it is unavailable and phase 2 decides on an upstream build |
+| `rofi-emoji` | `rofi-emoji` | none | Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh is a bundled picker reading unicode-data instead of a rofi plugin |
+| `unicode-data` | — | both | Provides /usr/share/unicode/emoji/emoji-test.txt, the list the bundled emoji picker reads |
+| `xdotool` | — | both | Types the chosen emoji into the focused X11 window; the Sway session uses wtype instead |
 | `fonts-noto-color-emoji` | `noto-fonts-emoji` | both | Debian names the colour emoji font separately |
 | `xclip` | `xclip` | both |  |
-| `firefox-esr` | `firefox` | debian | Debian ships the ESR package; Ubuntu's apt firefox is only a snap transitional package, so phase 3 adds the Mozilla apt repository instead |
+| `firefox-esr` | `firefox` | debian | Debian ships the ESR package and has no apt firefox |
+| `firefox` | `firefox` | ubuntu | Ubuntu's apt firefox is the package that installs the Firefox snap; there is no firefox-esr |
+| `snapd` | — | both | Ubuntu's browser is a snap; on Debian snapd installs nothing by itself and is groundwork for phase 3 |
 | `thunar` | `thunar` | both |  |
 | `thunar-archive-plugin` | `thunar-archive-plugin` | both |  |
 | `file-roller` | `file-roller` | both |  |
@@ -96,7 +100,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `mkcert` | `mkcert` | both |  |
 | `libnss3-tools` | `nss` | both | certutil, which mkcert needs, lives in libnss3-tools |
 | `iputils-ping` | `inetutils` | both | Debian splits the inetutils tools; ping is the one this desktop uses |
-| `uv` (not packaged) | `uv` | none | Astral publishes no apt package; the official installer script is used in a later phase |
+| `uv` | `uv` | none | Astral publishes no apt package; the official installer script is used in a later phase |
 | `zsh` | `zsh` | both |  |
 | `zsh-autosuggestions` | `zsh-autosuggestions` | both |  |
 | `zsh-syntax-highlighting` | `zsh-syntax-highlighting` | both |  |
@@ -108,6 +112,26 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `unzip` | `unzip` | both |  |
 | `lazygit` | `lazygit` | both |  |
 | `fonts-jetbrains-mono` | `ttf-jetbrains-mono-nerd` | both | Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted |
+| `sway` | `sway` | both | Debian 13 has 1.10.1 and Ubuntu 26.04 has 1.11 |
+| `swaybg` | `swaybg` | both |  |
+| `swayidle` | `swayidle` | both |  |
+| `swaylock` | `swaylock` | both |  |
+| `waybar` | `waybar` | both | Debian 13 has 0.12.0 and Ubuntu 26.04 has 0.15.0; every module this configuration uses predates 0.12 |
+| `mako-notifier` | `mako` | both | Debian names the notification daemon package mako-notifier |
+| `grim` | `grim` | both |  |
+| `slurp` | `slurp` | both |  |
+| `wl-clipboard` | `wl-clipboard` | both |  |
+| `cliphist` | `cliphist` | both |  |
+| `jq` | `jq` | both |  |
+| `dbus` | `dbus` | both |  |
+| `libnotify-bin` | `libnotify` | both | notify-send ships in the -bin package, not the library |
+| `mate-polkit` | `polkit-gnome` | both | policykit-1-gnome was dropped from Debian 13; MATE's GTK agent is the equivalent and is packaged in both |
+| `qtwayland5` | `qt5-wayland` | both | Debian keeps the Qt 5 Wayland platform plugin under its soname |
+| `qt6-wayland` | `qt6-wayland` | both |  |
+| `xdg-desktop-portal-wlr` | `xdg-desktop-portal-wlr` | both |  |
+| `xdg-desktop-portal-gtk` | `xdg-desktop-portal-gtk` | both |  |
+| `xwayland` | `xorg-xwayland` | both | Debian drops the xorg- prefix; rofi is X11-only on Debian's 1.7.5, so the session needs it |
+| `wtype` | — | both | Types the chosen emoji into the focused Wayland window; no counterpart in the Arch package list |
 
 ## Keyboard
 

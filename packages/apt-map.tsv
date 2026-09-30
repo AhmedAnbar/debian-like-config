@@ -31,10 +31,14 @@ audio	pipewire-pulse	pipewire-pulse	both	-
 audio	wireplumber	wireplumber	both	-
 audio	alsa-utils	alsa-utils	both	-
 input-emoji	brightnessctl	brightnessctl	both	-
-input-emoji	rofi-emoji	-	none	Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh reports it is unavailable and phase 2 decides on an upstream build
+input-emoji	rofi-emoji	-	none	Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh is a bundled picker reading unicode-data instead of a rofi plugin
+input-emoji	-	unicode-data	both	Provides /usr/share/unicode/emoji/emoji-test.txt, the list the bundled emoji picker reads
+input-emoji	-	xdotool	both	Types the chosen emoji into the focused X11 window; the Sway session uses wtype instead
 input-emoji	noto-fonts-emoji	fonts-noto-color-emoji	both	Debian names the colour emoji font separately
 input-emoji	xclip	xclip	both	-
-browser-files	firefox	firefox-esr	debian	Debian ships the ESR package; Ubuntu's apt firefox is only a snap transitional package, so phase 3 adds the Mozilla apt repository instead
+browser-files	firefox	firefox-esr	debian	Debian ships the ESR package and has no apt firefox
+browser-files	firefox	firefox	ubuntu	Ubuntu's apt firefox is the package that installs the Firefox snap; there is no firefox-esr
+browser-files	-	snapd	both	Ubuntu's browser is a snap; on Debian snapd installs nothing by itself and is groundwork for phase 3
 browser-files	thunar	thunar	both	-
 browser-files	thunar-archive-plugin	thunar-archive-plugin	both	-
 browser-files	file-roller	file-roller	both	-
@@ -68,3 +72,23 @@ editor-tools	fd	fd-find	both	Debian installs the binary as fdfind; the Neovim co
 editor-tools	unzip	unzip	both	-
 editor-tools	lazygit	lazygit	both	-
 editor-tools	ttf-jetbrains-mono-nerd	fonts-jetbrains-mono	both	Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted
+sway	sway	sway	both	Debian 13 has 1.10.1 and Ubuntu 26.04 has 1.11
+sway	swaybg	swaybg	both	-
+sway	swayidle	swayidle	both	-
+sway	swaylock	swaylock	both	-
+sway	waybar	waybar	both	Debian 13 has 0.12.0 and Ubuntu 26.04 has 0.15.0; every module this configuration uses predates 0.12
+sway	mako	mako-notifier	both	Debian names the notification daemon package mako-notifier
+sway	grim	grim	both	-
+sway	slurp	slurp	both	-
+sway	wl-clipboard	wl-clipboard	both	-
+sway	cliphist	cliphist	both	-
+sway	jq	jq	both	-
+sway	dbus	dbus	both	-
+sway	libnotify	libnotify-bin	both	notify-send ships in the -bin package, not the library
+sway	polkit-gnome	mate-polkit	both	policykit-1-gnome was dropped from Debian 13; MATE's GTK agent is the equivalent and is packaged in both
+sway	qt5-wayland	qtwayland5	both	Debian keeps the Qt 5 Wayland platform plugin under its soname
+sway	qt6-wayland	qt6-wayland	both	-
+sway	xdg-desktop-portal-wlr	xdg-desktop-portal-wlr	both	-
+sway	xdg-desktop-portal-gtk	xdg-desktop-portal-gtk	both	-
+sway	xorg-xwayland	xwayland	both	Debian drops the xorg- prefix; rofi is X11-only on Debian's 1.7.5, so the session needs it
+sway	-	wtype	both	Types the chosen emoji into the focused Wayland window; no counterpart in the Arch package list
