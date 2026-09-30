@@ -90,6 +90,9 @@ if ask 'Install the Sway configuration (each existing changed file asks before r
         esac
     done 3< <(find "$bundle_dir/config/sway" "$bundle_dir/config/waybar" "$bundle_dir/config/mako" \
         "$bundle_dir/config/swaylock" "$bundle_dir/config/xdg-desktop-portal" -type f -print0 | sort -z)
+    # One picker serves both sessions: the i3 binding loads i3/emoji.sh and the Sway
+    # binding loads sway/emoji.sh, and they are the same script.
+    install_file "$bundle_dir/config/i3/emoji.sh" sway/emoji.sh 755
     # sway -C validates a configuration without a compositor, so this runs anywhere.
     if command -v sway >/dev/null; then
         attempt sway -C -c "$target_config/sway/config"

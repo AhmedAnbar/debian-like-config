@@ -143,33 +143,8 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.rmSync(home, {recursive: true, force: true});
 }
 
-// The emoji picker must explain the missing Debian plugin instead of opening nothing.
-{
-    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-emoji-smoke-'));
-    const stubs = path.join(probe, 'bin');
-    fs.mkdirSync(stubs);
-    const log = path.join(probe, 'log');
-    fs.writeFileSync(path.join(stubs, 'rofi'), `#!/bin/sh\necho "rofi $*" >> ${log}\n`, {mode: 0o755});
-    fs.writeFileSync(path.join(stubs, 'notify-send'), `#!/bin/sh\necho "notify $*" >> ${log}\n`, {mode: 0o755});
-    const emoji = (pluginDir) => {
-        fs.writeFileSync(log, '');
-        const result = spawnSync('sh', [path.join(root, 'config/i3/emoji.sh')], {
-            encoding: 'utf8', timeout: 20000,
-            env: {...process.env, PATH: `${stubs}:/usr/bin:/bin`, ROFI_PLUGIN_PATH: pluginDir},
-        });
-        assert.equal(result.status, 0, result.stderr);
-        return {log: fs.readFileSync(log, 'utf8'), stderr: result.stderr};
-    };
-    const missing = emoji(path.join(probe, 'empty'));
-    assert.doesNotMatch(missing.log, /^rofi/m, 'Without the plugin, Rofi must not be started');
-    assert.match(missing.log, /^notify/m, 'The user is told why');
-    assert.match(missing.stderr, /emoji plugin/);
-    const present = path.join(probe, 'plugins');
-    fs.mkdirSync(present);
-    fs.writeFileSync(path.join(present, 'emoji.so'), '');
-    assert.match(emoji(present).log, /^rofi .*-modi emoji/m, 'With the plugin, the picker opens');
-    fs.rmSync(probe, {recursive: true, force: true});
-}
+// The emoji picker has its own test file, tests/emoji-smoke.js: it is no longer a
+// probe for a Rofi plugin but a picker reading unicode-data, with five scenarios.
 
 // Services, delegation and the closing summary, against stubs.
 {

@@ -91,7 +91,7 @@ assert.match(preview.stdout, /rofi\/active-theme\.rasi/,
         assert.ok(fs.existsSync(path.join(home, '.config', relative)), `Missing: ${relative}`);
     }
     for (const script of ['sway/clipboard.sh', 'sway/launcher.sh', 'sway/lock.sh', 'sway/notes.sh',
-        'sway/screenshot.sh', 'sway/session-start.sh']) {
+        'sway/screenshot.sh', 'sway/session-start.sh', 'sway/emoji.sh']) {
         const mode = fs.statSync(path.join(home, '.config', script)).mode & 0o777;
         assert.equal(mode, 0o755, `${script} must be executable, not ${mode.toString(8)}`);
     }
