@@ -68,4 +68,38 @@ fs.rmSync(scratch, {recursive: true, force: true});
     assert.match(body, /source "\$bundle_dir\/lib\/common\.sh"/, 'install.sh must source the library');
     assert.doesNotMatch(body, /^install_file\(\) \{/m, 'install.sh must not redefine install_file');
 }
+// The group reader is the one place that decides what a release installs.
+{
+    const groupScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-group-smoke-'));
+    const map = path.join(groupScratch, 'map.tsv');
+    fs.writeFileSync(map, ['group\tarch\tapt\twhere\tnote',
+        'demo\talpha\talpha\tboth\t-',
+        'demo\tbeta\tbeta-debian\tdebian\tDebian names it differently for a reason this test does not care about',
+        'demo\tgamma\tgamma-ubuntu\tubuntu\tUbuntu names it differently for a reason this test does not care about',
+        'demo\tdelta\t-\tnone\tNot packaged anywhere, and this note is long enough to satisfy the map rule',
+        'other\tepsilon\tepsilon\tboth\t-',
+        'demo\talpha-too\talpha\tboth\tA second row resolving to the same apt name, to prove deduplication',
+    ].join('\n') + '\n');
+    const probe = `
+        dry_run=true; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        map_group_packages ${map} demo debian chosen
+        printf '%s\\n' "\${chosen[@]}"
+        printf 'unavailable: %s\\n' "\${unavailable[*]}"
+        printf 'skipped: %s\\n' "\${skipped[*]}"
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: groupScratch}});
+    assert.equal(result.status, 0, result.stderr);
+    const printed = result.stdout.trim().split('\n');
+    assert.equal(printed[0], 'alpha', 'Deduplicated, and only this release');
+    assert.equal(printed.filter((l) => l === 'beta-debian').length, 1,
+        'The Debian-only package is included on Debian');
+    assert.equal(printed.filter((l) => l === 'gamma-ubuntu').length, 0,
+        'The other release\'s package is not installed here');
+    const reported = printed.join('\n');
+    assert.match(reported, /unavailable: delta \(Not packaged anywhere/, 'Report it with its reason');
+    assert.match(reported, /skipped: gamma-ubuntu \(Ubuntu names it/, 'Report the other release\'s package');
+    fs.rmSync(groupScratch, {recursive: true, force: true});
+}
 console.log('setup-smoke: all checks passed');

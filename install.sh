@@ -58,26 +58,17 @@ declare -A group_label=(
     [shell]='Zsh and its completion plugins'
 )
 packages=()
-unavailable=()
-skipped=()
 group() {
-    local id=$1 list=() g arch apt where note
-    while IFS=$'\t' read -r g arch apt where note; do
-        [[ "$g" == "$id" ]] || continue
-        case "$where" in
-            none) unavailable+=("$arch ($note)") ;;
-            both) list+=("$apt") ;;
-            "$release") list+=("$apt") ;;
-            *) skipped+=("$apt ($note)") ;;
-        esac
-    done < <(tail -n +2 -- "$map")
-    (( ${#list[@]} )) || return 0
-    mapfile -t list < <(printf '%s\n' "${list[@]}" | sort -u)
-    printf '\n%s\n  %s\n' "${group_label[$id]:-Additional packages ($id)}" "${list[*]}"
-    if ask 'Include these packages?'; then packages+=("${list[@]}"); fi
+    # Not named "list": map_group_packages takes the array by name, and a nameref
+    # pointing at a local of the same name is a circular reference bash refuses.
+    local id=$1 chosen=()
+    map_group_packages "$map" "$id" "$release" chosen
+    (( ${#chosen[@]} )) || return 0
+    printf '\n%s\n  %s\n' "${group_label[$id]:-Additional packages ($id)}" "${chosen[*]}"
+    if ask 'Include these packages?'; then packages+=("${chosen[@]}"); fi
 }
 # editor-tools is offered by setup-nvim.sh, not here; every other group in the map is.
-mapfile -t group_ids < <(awk -F'\t' 'NR > 1 && $1 != "editor-tools" && !seen[$1]++ { print $1 }' "$map")
+mapfile -t group_ids < <(awk -F'\t' 'NR > 1 && $1 != "editor-tools" && $1 != "sway" && !seen[$1]++ { print $1 }' "$map")
 (( ${#group_ids[@]} )) || { printf 'The package map lists no groups: %s\n' "$map" >&2; exit 1; }
 for id in "${group_ids[@]}"; do group "$id"; done
 if (( ${#unavailable[@]} )); then

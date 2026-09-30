@@ -36,6 +36,31 @@ detect_release() {
             esac ;;
     esac
 }
+unavailable=()
+skipped=()
+# Fills the named array with the apt names one group installs on one release, and
+# records the rest: where=none packages are unavailable everywhere, and the other
+# release's rows are skipped. The array is passed by name rather than printed because
+# a function read through $(...) or a process substitution runs in a subshell, where
+# its appends to unavailable and skipped would be thrown away.
+# Usage: map_group_packages <map> <group> <release> <array name>
+map_group_packages() {
+    local map=$1 id=$2 want=$3 g arch apt where note
+    local -n _mgp_out=$4
+    local list=()
+    _mgp_out=()
+    while IFS=$'\t' read -r g arch apt where note; do
+        [[ "$g" == "$id" ]] || continue
+        case "$where" in
+            none) unavailable+=("$arch ($note)") ;;
+            both) list+=("$apt") ;;
+            "$want") list+=("$apt") ;;
+            *) skipped+=("$apt ($note)") ;;
+        esac
+    done < <(tail -n +2 -- "$map")
+    (( ${#list[@]} )) || return 0
+    mapfile -t _mgp_out < <(printf '%s\n' "${list[@]}" | sort -u)
+}
 ask() {
     local answer
     read -r -p "$1 [y/N] " answer || return 1
