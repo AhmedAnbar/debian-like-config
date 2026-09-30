@@ -94,6 +94,42 @@ whatever phase 1 rows it needs, deduplicated as `install.sh` already does.
 `xdg-desktop-portal-wlr`, `xdg-desktop-portal-gtk` and `unicode-data` all
 resolve under their own names in both releases.
 
+## The browser and snap
+
+Decided on 2026-09-30, replacing phase 1's deferral: Debian installs
+`firefox-esr` from apt, Ubuntu installs Firefox as a snap, and `snapd` is
+installed on both.
+
+Ubuntu needs no explicit `snap install`. Its apt `firefox`
+(`1:1snap1-0ubuntu9.1`) describes itself as "Installs Firefox snap and provides
+some system integration", so `apt-get install -y firefox` performs the snap
+installation through the package's `postinst`, which keeps the browser inside
+the one package step the installer already has and stays idempotent on a rerun.
+`DEBIAN_FRONTEND=noninteractive` is set for that step so its debconf prompt
+cannot block an unattended run.
+
+`snapd` is verified as 2.68.3 on Debian and 2.76.3 on Ubuntu. Debian's package
+owns `/snap` itself — confirmed with `dpkg -L snapd` — so the symlink that
+classic snaps need on some distributions is not a step here. It ships
+`snapd.socket`, `snapd.service` and `snapd.apparmor.service`; enabling
+`snapd.socket` joins the optional service list beside NetworkManager and
+bluetooth, declinable like the rest. On Debian, where no snap is installed by
+this project, `snapd` is groundwork for phase 3 and does nothing until a snap
+is asked for; the installer says that rather than implying a benefit.
+
+### The map's uniqueness rule generalizes
+
+`packages/apt-map.tsv` currently allows one row per Arch package name. The
+browser is the first package that maps to a different apt name on each release,
+so the rule becomes: no Arch name may appear twice **for the same release**.
+Two rows for `firefox` — `firefox-esr` where `debian`, `firefox` where
+`ubuntu` — are legal; two rows both marked `both`, or both marked `debian`, are
+not. `tests/apt-map-smoke.js` checks the pair rather than the name, and the
+existing note requirement still applies to every row that differs.
+
+The current `firefox` row's note says phase 3 will add the Mozilla apt
+repository. That is now wrong and is corrected with the row.
+
 ## setup-sway.sh
 
 Ordered as the Arch script is, with every step declinable:
@@ -194,6 +230,7 @@ test has not shown.
 | `tests/apt-names-smoke.js` | Every `sway` group name resolves and simulates in both images | containers |
 | `tests/drift-smoke.js` | The new files are listed exactly once, and shared files match the Arch repository byte for byte | the Arch checkout |
 | `tests/readme-smoke.js` | Every installable package is documented, including the new group | none |
+| `tests/apt-map-smoke.js` | No Arch name resolves twice for one release, and the two `firefox` rows are the only per-release split | none |
 
 The headless compositor route is confirmed to work: `WLR_BACKENDS=headless
 WLR_LIBINPUT_NO_DEVICES=1 sway` starts in `debian:stable-slim` and Waybar loads
@@ -219,6 +256,11 @@ failure at startup.
   way.
 - **The generated profile is untested on real hardware.** It is exercised with
   stubbed `swaymsg` output only. The README says so.
+- **The snap installation cannot be verified here.** `apt-get install --simulate
+  firefox` resolves the transitional package, but the snap it fetches needs a
+  running `snapd`, systemd and network access, none of which a container test
+  has. Phase 2 verifies that the name resolves and that the package is the snap
+  installer; whether the browser starts on Wayland is confirmed on the machine.
 - **Nothing here proves the session renders.** Container tests show
   configuration validity and package resolution. Whether the desktop starts,
   the touchscreen maps and the fonts render is confirmed on the machine, and
@@ -226,7 +268,6 @@ failure at startup.
 
 ## Decisions still open
 
-- Whether phase 3 or phase 4 owns the Ubuntu browser question, given that
-  `firefox-esr` is Debian-only and Ubuntu's apt `firefox` is a snap
-  transitional package. Phase 1 deferred it to the vendor-repository work; this
-  phase does not revisit it.
+- Which of phase 3's applications come from snap now that `snapd` is present on
+  both releases, and which keep a vendor apt repository. Phase 3 decides
+  per application; this phase only installs `snapd` and the browser.
