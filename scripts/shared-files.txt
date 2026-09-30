@@ -88,7 +88,6 @@ config/rofi/i3-theme-dracula.rasi
 config/rofi/i3-theme-nord.rasi
 config/rofi/i3-theme.rasi
 config/shell/colorls.sh
-config/sway/clipboard.sh
 config/sway/config
 config/sway/config.d/00-local.conf
 config/sway/config.d/40-notes.conf
@@ -97,7 +96,6 @@ config/sway/lock.sh
 config/sway/notes.lua
 config/sway/notes.sh
 config/sway/screenshot.sh
-config/sway/session-start.sh
 config/swaylock/config
 config/waybar/config.jsonc
 config/waybar/style.css

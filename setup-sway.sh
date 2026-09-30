@@ -81,4 +81,21 @@ if (( ${#packages[@]} )); then
         attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
     fi
 fi
+if ask 'Install the Sway configuration (each existing changed file asks before replacement)?'; then
+    while IFS= read -r -d '' source <&3; do
+        relative=${source#"$bundle_dir/config/"}
+        case "$relative" in
+            *.sh) install_file "$source" "$relative" 755 ;;
+            *) install_file "$source" "$relative" ;;
+        esac
+    done 3< <(find "$bundle_dir/config/sway" "$bundle_dir/config/waybar" "$bundle_dir/config/mako" \
+        "$bundle_dir/config/swaylock" "$bundle_dir/config/xdg-desktop-portal" -type f -print0 | sort -z)
+    # sway -C validates a configuration without a compositor, so this runs anywhere.
+    if command -v sway >/dev/null; then
+        attempt sway -C -c "$target_config/sway/config"
+    else
+        printf 'sway is not installed yet, so skipping the configuration check.\n'
+        printf 'Accept the package step, or run: sway -C -c %s/sway/config\n' "$target_config"
+    fi
+fi
 finished=true

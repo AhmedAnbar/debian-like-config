@@ -5,7 +5,7 @@
 set -eu
 config_root=${XDG_CONFIG_HOME:-$HOME/.config}
 if ! command -v cliphist >/dev/null; then
-    message='Clipboard history needs cliphist: sudo pacman -S --needed cliphist'
+    message='Clipboard history needs cliphist: sudo apt-get install cliphist'
     if command -v notify-send >/dev/null; then notify-send 'Clipboard history' "$message"; fi
     printf '%s\n' "$message" >&2
     exit 0

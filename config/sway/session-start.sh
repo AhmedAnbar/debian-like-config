@@ -16,7 +16,14 @@ fi
 mako &
 nm-applet --indicator &
 blueman-applet &
-/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 &
+# Debian 13 dropped policykit-1-gnome; mate-polkit is the GTK agent in both releases.
+# Ubuntu still has the GNOME one, so try each packaged location and say nothing if a
+# desktop already runs an agent of its own.
+for agent in /usr/libexec/polkit-mate-authentication-agent-1 \
+    /usr/lib/mate-polkit/polkit-mate-authentication-agent-1 \
+    /usr/lib/policykit-1-gnome/polkit-gnome-authentication-agent-1; do
+    if [ -x "$agent" ]; then "$agent" & break; fi
+done
 
 # No idle locking: the screen only goes black, and Alt+l locks when you want it.
 # before-sleep and lock stay, so suspend and loginctl lock-session still lock.

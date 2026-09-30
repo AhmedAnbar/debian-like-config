@@ -1,3 +1,5 @@
-config/i3/config	The XDG autostart comment cites the freedesktop specification instead of the Arch wiki
+config/i3/config	Debian uses the freedesktop autostart URL, and the conky panel arrives with conky in phase 4 rather than autostarting a tool no earlier phase installs
 config/i3/emoji.sh	Debian and Ubuntu do not package the Rofi emoji plugin, so the picker reports it instead of opening empty
 zsh/zshrc	Debian installs the Zsh plugins under /usr/share/<plugin>/ rather than Arch's /usr/share/zsh/plugins/<plugin>/
+config/sway/clipboard.sh	The missing-cliphist message names apt rather than pacman
+config/sway/session-start.sh	Debian 13 has no polkit-gnome agent, so the session probes the mate-polkit and GNOME paths in turn
