@@ -24,12 +24,24 @@ if [[ ! -d "$arch_dir" ]]; then
 fi
 drifted=()
 missing=()
+# The Arch repository keeps the Sway session under sway/config/ and its machine
+# profiles under sway/profiles/; this one keeps every desktop's configuration under
+# config/. Same file, different home, so the prefix is translated rather than leaving
+# a permanent "missing" report for every Sway file.
+upstream_path() {
+    case "$1" in
+        config/sway/*|config/waybar/*|config/mako/*|config/swaylock/*|config/xdg-desktop-portal/*|profiles/*)
+            printf '%s/sway/%s' "$arch_dir" "$1" ;;
+        *) printf '%s/%s' "$arch_dir" "$1" ;;
+    esac
+}
 while IFS= read -r relative; do
     [[ -n "$relative" ]] || continue
-    if [[ ! -f "$arch_dir/$relative" ]]; then
+    upstream=$(upstream_path "$relative")
+    if [[ ! -f "$upstream" ]]; then
         printf 'missing\t%s\n' "$relative"; missing+=("$relative"); continue
     fi
-    if cmp -s "$arch_dir/$relative" "$bundle_dir/$relative"; then
+    if cmp -s "$upstream" "$bundle_dir/$relative"; then
         printf 'same\t%s\n' "$relative"
     else
         printf 'drifted\t%s\n' "$relative"; drifted+=("$relative")
@@ -58,7 +70,7 @@ if [[ "$mode" == pull ]]; then
         fi
     fi
     for relative in "${drifted[@]}"; do
-        cp -a -- "$arch_dir/$relative" "$bundle_dir/$relative"
+        cp -a -- "$(upstream_path "$relative")" "$bundle_dir/$relative"
         printf 'pulled\t%s\n' "$relative"
     done
     printf 'Pulled %d file(s). Review with git diff, then run the tests.\n' "${#drifted[@]}"
