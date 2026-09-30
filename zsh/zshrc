@@ -1,0 +1,77 @@
+# Zsh + Oh My Zsh, adapted from the useful preferences in old_config/zshrc.
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="robbyrussell"
+plugins=(git sudo extract colored-man-pages)
+zstyle ':omz:update' mode reminder
+if [[ -r "$ZSH/oh-my-zsh.sh" ]]; then
+  source "$ZSH/oh-my-zsh.sh"
+else
+  autoload -Uz compinit
+  compinit
+  PROMPT='%F{blue}%n@%m%f:%F{cyan}%~%f %# '
+fi
+
+setopt autocd interactivecomments numericglobsort
+setopt hist_expire_dups_first hist_ignore_dups hist_ignore_space hist_verify
+setopt append_history
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=10000
+SAVEHIST=10000
+PROMPT_EOL_MARK=''
+WORDCHARS=${WORDCHARS//\/}
+
+bindkey -e
+bindkey ' ' magic-space
+bindkey '^U' backward-kill-line
+bindkey '^R' history-incremental-search-backward
+bindkey '^[[3~' delete-char
+bindkey '^[[1;5C' forward-word
+bindkey '^[[1;5D' backward-word
+bindkey '^[[H' beginning-of-line
+bindkey '^[[F' end-of-line
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+
+typeset -U path PATH
+path=("$HOME/.local/bin" "$HOME/bin" "$HOME/.npm-global/bin" $path)
+# Composer global commands (e.g. laravel-lsp), including legacy installations.
+path=("${COMPOSER_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/composer}/vendor/bin" "$HOME/.composer/vendor/bin" $path)
+export PATH
+[[ -r "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
+export NVM_DIR="$HOME/.nvm"
+[[ -s "$NVM_DIR/nvm.sh" ]] && source "$NVM_DIR/nvm.sh"
+
+alias ls='ls --color=auto'
+alias ll='ls -lah'
+alias la='ls -A'
+alias grep='grep --color=auto'
+alias c=clear
+alias history='history 0'
+(( $+commands[nvim] )) && alias vim=nvim
+(( $+commands[bat] )) && alias cat='bat --paging=never'
+(( $+commands[procs] )) && alias ps=procs
+alias dartisan='docker compose run --rm artisan'
+alias dcomposer='docker compose run --rm composer'
+alias dnpm='docker compose run --rm npm'
+alias cr='cargo run'
+alias cw='cargo watch -x run'
+
+# colorls aliases (ls = colorls -l), shared by Bash and Zsh; inactive until colorls is installed.
+[[ ! -r "$HOME/.config/shell/colorls.sh" ]] || source "$HOME/.config/shell/colorls.sh"
+
+# Keep private SSH aliases outside the public configuration bundle.
+[[ ! -r "$HOME/.ssh/aliases.sh" ]] || source "$HOME/.ssh/aliases.sh"
+
+# Optional user tools: use Starship as the sole prompt if installed.
+(( $+commands[starship] )) && eval "$(starship init zsh)"
+(( $+commands[atuin] )) && eval "$(atuin init zsh)"
+
+if [[ -r /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]]; then
+  source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+  ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=#6c7086'
+fi
+# Syntax highlighting must load after widgets and other plugins.
+if [[ -r /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]]; then
+  source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+  ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
+fi

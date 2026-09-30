@@ -1,0 +1,20 @@
+* {
+    font: "Noto Sans 13";
+    background-color: transparent;
+    text-color: #cdd6f4;
+}
+window {
+    width: 700px;
+    border: 2px;
+    border-color: #b4befe;
+    border-radius: 14px;
+    background-color: #1e1e2e;
+}
+mainbox { padding: 16px; spacing: 12px; children: [ inputbar, listview ]; }
+inputbar { spacing: 10px; padding: 8px; background-color: #313244; border-radius: 8px; children: [ prompt, entry ]; }
+prompt { text-color: #b4befe; }
+entry { placeholder: "Search emoji…"; }
+listview { lines: 8; columns: 1; spacing: 4px; fixed-height: true; scrollbar: false; }
+element { padding: 8px; border-radius: 6px; children: [ element-text ]; }
+element selected.normal { background-color: #45475a; text-color: #cdd6f4; }
+element-text { vertical-align: 0.5; text-color: inherit; }

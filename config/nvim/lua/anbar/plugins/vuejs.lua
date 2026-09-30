@@ -1,0 +1,5 @@
+return {
+	{
+		"posva/vim-vue",
+	},
+}
