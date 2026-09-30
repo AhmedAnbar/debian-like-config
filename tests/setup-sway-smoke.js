@@ -123,5 +123,64 @@ assert.match(fs.readFileSync(path.join(root, 'config/sway/session-start.sh'), 'u
 assert.doesNotMatch(fs.readFileSync(path.join(root, 'config/i3/config'), 'utf8'),
     /conky\/start\.sh/, 'The i3 conky autostart moves to the phase that installs conky');
 
+// The Zenbook is recognized by DMI name and offered its own profile.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-zenbook-'));
+    const only = minimalPath();
+    const withDmi = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(40),
+        env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: debian,
+            DEBIAN_SETUP_DMI_NAME: 'Zenbook S 16 UM5606WA_UM5606WA'},
+    });
+    assert.equal(withDmi.status, 0, withDmi.stderr);
+    assert.match(withDmi.stdout, /Zenbook/, 'Name the machine it recognized');
+    const installed = fs.readFileSync(path.join(home, '.config/sway/config.d/00-local.conf'), 'utf8');
+    assert.match(installed, /output eDP-1 mode 1920x1200/, 'The bundled profile is what lands');
+    assert.match(installed, /map_to_output eDP-1/, 'Including the touchscreen mapping');
+    fs.rmSync(only, {recursive: true, force: true});
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// Unknown hardware inside a Sway session: the profile is generated from real outputs.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-generated-'));
+    const only = minimalPath(['jq']);
+    fs.writeFileSync(path.join(only, 'swaymsg'), `#!/bin/sh
+cat <<'JSON'
+[{"name":"DP-3","current_mode":{"width":2560,"height":1440}},
+ {"name":"eDP-2","current_mode":{"width":1920,"height":1080}}]
+JSON
+`, {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(40),
+        env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: debian,
+            DEBIAN_SETUP_DMI_NAME: 'Generic Laptop', SWAYSOCK: path.join(home, 'sock')},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const generated = fs.readFileSync(path.join(home, '.config/sway/config.d/00-local.conf'), 'utf8');
+    assert.match(generated, /output DP-3 mode 2560x1440/, 'The real output, not eDP-1');
+    assert.match(generated, /output eDP-2 mode 1920x1080/, 'Every output, not just the first');
+    assert.match(result.stdout, /DP-3/, 'Show the profile before writing it');
+    fs.rmSync(only, {recursive: true, force: true});
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// Review Focus 2: unknown hardware, outside Sway. Nothing is written and the reason is said.
+// All-no here: the bundle itself ships a 00-local.conf, so declining everything is the
+// only way to prove the profile step wrote nothing of its own.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-nosock-'));
+    const result = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'n\n'.repeat(40),
+        env: {...env(debian, home), DEBIAN_SETUP_DMI_NAME: 'Generic Laptop', SWAYSOCK: ''},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(!fs.existsSync(path.join(home, '.config/sway/config.d/00-local.conf')),
+        'A profile naming no outputs must not be written');
+    assert.match(result.stdout, /swaymsg -t get_outputs/,
+        'Say how to fill the profile in after the first login');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
 fs.rmSync(scratch, {recursive: true, force: true});
 console.log('setup-sway-smoke: all checks passed');

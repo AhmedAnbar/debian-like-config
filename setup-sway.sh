@@ -101,4 +101,38 @@ if ask 'Install the Sway configuration (each existing changed file asks before r
         printf 'Accept the package step, or run: sway -C -c %s/sway/config\n' "$target_config"
     fi
 fi
+# The bundled profile is specific to one laptop; the generated one names whatever
+# outputs the running session reports. Overridable so both branches are testable.
+dmi_name=${DEBIAN_SETUP_DMI_NAME:-$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)}
+case "$dmi_name" in
+    *UM5606*)
+        printf '\nThis looks like an ASUS Zenbook UM5606 (%s).\n' "$dmi_name"
+        printf 'Its profile sets eDP-1 to 1920x1200 and maps the touchscreen to that output.\n'
+        if ask 'Use the bundled Zenbook screen profile?'; then
+            install_file "$bundle_dir/profiles/zenbook-um5606.conf" sway/config.d/00-local.conf
+        fi ;;
+    *)
+        if [[ -n "${SWAYSOCK:-}" ]] && command -v swaymsg >/dev/null && command -v jq >/dev/null; then
+            generated=$(swaymsg -t get_outputs | jq -r \
+                '.[] | "output \(.name) mode \(.current_mode.width)x\(.current_mode.height) scale 1"')
+            if [[ -n "$generated" ]]; then
+                printf '\nThis session reports these outputs:\n%s\n' "$generated"
+                if ask 'Write this as your local Sway profile?'; then
+                    if ! "$dry_run"; then
+                        profile_temp=$(mktemp)
+                        printf '# Generated from swaymsg -t get_outputs on %s.\n' "$(date +%Y-%m-%d)" > "$profile_temp"
+                        printf '# Check inputs with: swaymsg -t get_inputs\n%s\n' "$generated" >> "$profile_temp"
+                        install_file "$profile_temp" sway/config.d/00-local.conf
+                        unlink "$profile_temp"
+                    else
+                        printf 'Would write sway/config.d/00-local.conf with those outputs\n'
+                    fi
+                fi
+            fi
+        else
+            printf '\nNot running inside Sway, so the outputs are unknown and no profile is written.\n'
+            printf 'After your first Sway login, run: swaymsg -t get_outputs\n'
+            printf 'then put the output lines in %s/sway/config.d/00-local.conf\n' "$target_config"
+        fi ;;
+esac
 finished=true
