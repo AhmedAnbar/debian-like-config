@@ -140,7 +140,10 @@ if ask 'Create and trust the mkcert local CA for HTTPS development (mkcert -inst
         attempt mkcert -install
     fi
 fi
-for service in NetworkManager.service bluetooth.service fstrim.timer; do
+printf '\nsnapd.socket is what makes snap packages work. On Ubuntu the browser is a snap and\n'
+printf 'needs it; on Debian nothing this project installs is a snap, and it stays idle until\n'
+printf 'something asks for one.\n'
+for service in NetworkManager.service bluetooth.service fstrim.timer snapd.socket; do
     if ask "Enable and start $service?"; then attempt sudo systemctl enable --now "$service"; fi
 done
 if ask 'Start and enable the PipeWire sockets and WirePlumber for this user?'; then

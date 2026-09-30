@@ -162,7 +162,7 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     });
     assert.equal(result.status, 0, result.stderr);
     const calls = fs.readFileSync(log, 'utf8');
-    for (const unit of ['NetworkManager.service', 'bluetooth.service', 'fstrim.timer']) {
+    for (const unit of ['NetworkManager.service', 'bluetooth.service', 'fstrim.timer', 'snapd.socket']) {
         assert.match(calls, new RegExp(`systemctl enable --now ${unit.replace('.', '\\.')}`), `Missing unit: ${unit}`);
     }
     assert.match(calls, /systemctl --user enable --now pipewire\.socket/);

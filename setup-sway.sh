@@ -135,4 +135,16 @@ case "$dmi_name" in
             printf 'then put the output lines in %s/sway/config.d/00-local.conf\n' "$target_config"
         fi ;;
 esac
+# No greeter is installed unless asked for: the machine already boots into something,
+# and taking that over is not a side effect an optional step should have.
+printf '\nA greeter is not required. The sway package installs the session file, so any\n'
+printf 'greeter already on this machine will list Sway, and a text console can start it with\n'
+printf 'dbus-run-session sway.\n'
+printf 'lightdm with lightdm-gtk-greeter lists both X11 and Wayland sessions, and is what the\n'
+printf 'Arch machine this configuration comes from uses.\n'
+if ask 'Install lightdm and its GTK greeter, and enable it at boot?'; then
+    attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y lightdm lightdm-gtk-greeter
+    attempt sudo systemctl enable lightdm.service
+    printf 'lightdm starts at the next boot. Choose Sway or i3 from its session menu.\n'
+fi
 finished=true

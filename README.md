@@ -155,6 +155,50 @@ enabled without a prompt.
 No login manager is part of this phase: keep the one your installation already
 has, or start the session with `startx` using the bundled `xinit`.
 
+## The Sway session
+
+Phase 2 adds an optional Wayland session. The i3 desktop stays installed and
+unchanged; the two live side by side and the greeter's session menu chooses
+between them.
+
+```bash
+bash setup-sway.sh          # or --dry-run to see every step first
+```
+
+It installs the `sway` package group, the Sway, Waybar, mako, swaylock and
+portal configuration, and a screen profile. Every step asks first, and every
+replaced file is backed up under `~/.local/state/debian-desktop-setup/`.
+
+**Starting it.** The `sway` package installs
+`/usr/share/wayland-sessions/sway.desktop`, so an existing greeter lists Sway
+with no help from the installer. Without a greeter, log into a text console and
+run `dbus-run-session sway`. The installer offers to set up `lightdm` with
+`lightdm-gtk-greeter`, and declines by default.
+
+**The screen profile.** On an ASUS Zenbook UM5606 the bundled profile sets
+eDP-1 to 1920x1200 and maps the touchscreen to it. On other hardware, run
+`setup-sway.sh` from inside a Sway session and it writes a profile from
+`swaymsg -t get_outputs`; outside Sway it writes nothing and tells you to run
+that command after your first login. `~/.config/sway/config.d/00-local.conf` is
+the file to edit either way.
+
+**Keys.** Alt+D apps · Alt+B Firefox · Print screenshot · Super+period emoji ·
+Alt+C clipboard history · Alt+L lock · Alt+` notes · Shift+Caps Lock
+English/Arabic · Alt+Shift+E log out.
+
+**The emoji picker.** `rofi-emoji` is packaged in neither release, so
+Super+period runs a bundled picker that reads the emoji list from
+`unicode-data` and types the choice with `wtype` (Wayland) or `xdotool` (X11).
+If the compositor refuses synthetic input, the character goes to the clipboard
+and a notification says so. The i3 session uses the same script.
+
+**What has not been confirmed.** The tests in this repository validate the Sway
+configuration with `sway -C`, check that Waybar 0.12.0 and 0.15.0 both load
+`config.jsonc`, and resolve every package name in both releases. They cannot
+show that the session renders, that the touchscreen mapping works, or that the
+fonts look right: those are confirmed on the machine, and this README will say
+so when they have been.
+
 ## Backups and undo
 
 Every replaced file is copied to `~/.local/state/debian-desktop-setup/<timestamp>-<pid>/`
@@ -162,10 +206,12 @@ with its path preserved, so restoring one is a `cp` back.
 
 ## What comes later
 
-Phase 1 covers the i3 desktop, the shell and the editor. Still to come, each
-with its own design document under `docs/superpowers/specs/`:
+Phases 1 and 2 cover the i3 desktop, the shell, the editor and the Sway
+session. Still to come, each with its own design document under
+`docs/superpowers/specs/`:
 
-1. The Sway/Wayland session, including the Waybar version guard Debian needs.
-2. Third-party applications: Chrome, DBeaver, Teams, Dropbox, OnlyOffice,
-   Postman, and Tor Browser fetched through a VPS.
-3. System extras: Docker, SSH hardening, conky, zram and snapshots.
+1. Third-party applications: Chrome, DBeaver, Teams, Dropbox, OnlyOffice,
+   Postman, and Tor Browser fetched through a VPS. `snapd` is already installed,
+   so each application chooses between a snap and a vendor apt repository.
+2. System extras: Docker, SSH hardening, conky, zram and snapshots. The conky
+   panel fragments for both i3 and Sway arrive here.

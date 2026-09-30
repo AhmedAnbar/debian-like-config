@@ -47,8 +47,10 @@ const minimalPath = (extra = []) => {
         assert.ok(source, `This test needs ${command} to exist somewhere ordinary`);
         fs.symlinkSync(source, path.join(dir, command));
     }
+    // systemctl is a no-op here: every all-yes run reaches the service and greeter
+    // steps, and a test must never touch the real init system.
     for (const [name, body] of [['apt-get', 'exit 0'], ['apt-cache', "echo '  Candidate: 1.10.1-2'"],
-        ['sudo', 'exec "$@"']]) {
+        ['sudo', 'exec "$@"'], ['systemctl', 'exit 0']]) {
         fs.writeFileSync(path.join(dir, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
     }
     return dir;
@@ -179,6 +181,38 @@ JSON
         'A profile naming no outputs must not be written');
     assert.match(result.stdout, /swaymsg -t get_outputs/,
         'Say how to fill the profile in after the first login');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// The greeter is offered and declined by default: a run of all-no touches no service.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-greeter-'));
+    const only = minimalPath();
+    const log = path.join(home, 'calls');
+    for (const name of ['systemctl', 'sway']) {
+        fs.writeFileSync(path.join(only, name), `#!/bin/sh\necho "${name} $*" >> ${log}\nexit 0\n`, {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(only, 'apt-get'), `#!/bin/sh\necho "apt-get $*" >> ${log}\nexit 0\n`, {mode: 0o755});
+    const declinedRun = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'n\n'.repeat(40),
+        env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: debian},
+    });
+    assert.equal(declinedRun.status, 0, declinedRun.stderr);
+    assert.match(declinedRun.stdout, /lightdm/, 'The greeter step must at least be mentioned');
+    const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
+    assert.doesNotMatch(calls, /systemctl enable/, 'Declining must enable nothing');
+    // Accepting installs the greeter and its GTK greeter, and enables the service.
+    fs.rmSync(log, {force: true});
+    const accepted = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(40),
+        env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: debian,
+            DEBIAN_SETUP_DMI_NAME: 'Generic Laptop', SWAYSOCK: ''},
+    });
+    assert.equal(accepted.status, 0, accepted.stderr);
+    const accCalls = fs.readFileSync(log, 'utf8');
+    assert.match(accCalls, /apt-get install -y lightdm lightdm-gtk-greeter/, 'Install both parts');
+    assert.match(accCalls, /systemctl enable lightdm\.service/, 'And enable it');
+    fs.rmSync(only, {recursive: true, force: true});
     fs.rmSync(home, {recursive: true, force: true});
 }
 

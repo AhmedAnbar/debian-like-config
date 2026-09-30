@@ -41,4 +41,14 @@ for (const [, arch, apt, where] of rows) {
 }
 assert.match(readme, /not packaged/i, 'The catalogue must mark the unavailable packages');
 
+// The Sway session has to be documented where a reader will look for it.
+assert.match(readme, /^## The Sway session$/m, 'Phase 2 documents its own section');
+assert.match(readme, /setup-sway\.sh/, 'Name the script that installs it');
+assert.match(readme, /dbus-run-session sway/, 'Document the route that needs no greeter');
+assert.match(readme, /Super\+period/, 'Document the emoji picker key');
+assert.match(readme, /swaymsg -t get_outputs/, 'Say how to write a profile on other hardware');
+// Claims the tests cannot support must be marked as unverified, not stated as fact.
+assert.match(readme, /not been run on a real Debian|confirmed on the machine|cannot show/i,
+    'Say what a container test does not prove');
+
 console.log('readme-smoke: all checks passed');
