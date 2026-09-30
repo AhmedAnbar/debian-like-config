@@ -255,14 +255,16 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     const source = fs.readFileSync(path.join(root, 'install.sh'), 'utf8').split('\n');
     const callSite = source.findIndex((line) => line.includes('run sudo apt-get update')) + 1;
-    const insideRun = source.findIndex((line) => line.trim().startsWith('if ! "$dry_run"; then "$@"')) + 1;
-    assert.ok(callSite > 0 && insideRun > 0, 'Both lines must be findable');
+    assert.ok(callSite > 0, 'The failing call site must be findable');
     const result = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(10),
         env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
     });
-    assert.match(result.stderr, new RegExp(`line ${callSite}\\b`), 'Name the failing call site');
-    assert.doesNotMatch(result.stderr, new RegExp(`line ${insideRun}\\b`), 'run() is not the culprit');
+    // run() now lives in lib/common.sh, so the old "not run()'s line" check would compare
+    // line numbers from two different files. Every line the trap reports must be the call
+    // site, which says the same thing and cannot be fooled by the two files agreeing.
+    const reported = [...new Set([...result.stderr.matchAll(/line (\d+)/g)].map((m) => Number(m[1])))];
+    assert.deepEqual(reported, [callSite], `The trap must name only the call site, got ${reported}`);
     fs.rmSync(home, {recursive: true, force: true});
 }
 

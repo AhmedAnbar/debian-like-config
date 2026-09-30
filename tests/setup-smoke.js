@@ -56,4 +56,16 @@ assert.doesNotMatch(zshrc, /\/usr\/share\/zsh\/plugins\//,
 
 assert.deepEqual(fs.readdirSync(scratch), ['bin'], 'A preview must not create files');
 fs.rmSync(scratch, {recursive: true, force: true});
+// The library is sourced, not run: executing it must not look like a successful install.
+{
+    const direct = spawnSync('bash', [path.join(root, 'lib/common.sh')], {encoding: 'utf8', timeout: 10000});
+    assert.equal(direct.status, 0, 'Sourcing a function library has no side effects');
+    assert.equal(direct.stdout, '', 'A sourced library prints nothing on its own');
+}
+// Every script that uses the shared helpers must source them rather than redefine them.
+{
+    const body = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
+    assert.match(body, /source "\$bundle_dir\/lib\/common\.sh"/, 'install.sh must source the library');
+    assert.doesNotMatch(body, /^install_file\(\) \{/m, 'install.sh must not redefine install_file');
+}
 console.log('setup-smoke: all checks passed');
