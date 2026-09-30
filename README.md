@@ -71,7 +71,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `wireplumber` | `wireplumber` | both |  |
 | `alsa-utils` | `alsa-utils` | both |  |
 | `brightnessctl` | `brightnessctl` | both |  |
-| `rofi-emoji` | `rofi-emoji` | none | Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh is a bundled picker reading unicode-data instead of a rofi plugin |
+| — | `rofi-emoji` | none | Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh is a bundled picker reading unicode-data instead of a rofi plugin |
 | `unicode-data` | — | both | Provides /usr/share/unicode/emoji/emoji-test.txt, the list the bundled emoji picker reads |
 | `xdotool` | — | both | Types the chosen emoji into the focused X11 window; the Sway session uses wtype instead |
 | `fonts-noto-color-emoji` | `noto-fonts-emoji` | both | Debian names the colour emoji font separately |
@@ -100,7 +100,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `mkcert` | `mkcert` | both |  |
 | `libnss3-tools` | `nss` | both | certutil, which mkcert needs, lives in libnss3-tools |
 | `iputils-ping` | `inetutils` | both | Debian splits the inetutils tools; ping is the one this desktop uses |
-| `uv` | `uv` | none | Astral publishes no apt package; the official installer script is used in a later phase |
+| — | `uv` | none | Astral publishes no apt package; the official installer script is used in a later phase |
 | `zsh` | `zsh` | both |  |
 | `zsh-autosuggestions` | `zsh-autosuggestions` | both |  |
 | `zsh-syntax-highlighting` | `zsh-syntax-highlighting` | both |  |
@@ -166,7 +166,11 @@ bash setup-sway.sh          # or --dry-run to see every step first
 ```
 
 It installs the `sway` package group, the Sway, Waybar, mako, swaylock and
-portal configuration, and a screen profile. Every step asks first, and every
+portal configuration, and a screen profile. It also offers the programs the
+session invokes that `install.sh` would otherwise have installed — the terminal,
+rofi and its themes, `pactl`, `brightnessctl`, the fonts, the emoji list, the
+tray applets and the browser — so it works on a machine where `install.sh` never
+ran, and installs no Xorg and no i3 to do it. Every step asks first, and every
 replaced file is backed up under `~/.local/state/debian-desktop-setup/`.
 
 **Starting it.** The `sway` package installs

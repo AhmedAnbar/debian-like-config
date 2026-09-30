@@ -26,6 +26,7 @@ const osRelease = (body, name) => {
     return file;
 };
 const debian = osRelease('ID=debian\nPRETTY_NAME="Debian GNU/Linux 13 (trixie)"\n', 'debian');
+const ubuntu = osRelease('ID=ubuntu\nID_LIKE=debian\nPRETTY_NAME="Ubuntu 26.04.1 LTS"\n', 'ubuntu');
 const env = (file, home = scratch) => ({
     ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}`, DEBIAN_SETUP_OS_RELEASE: file,
 });
@@ -40,8 +41,8 @@ const minimalPath = (extra = []) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-path-'));
     // bash and sh are in the list because spawnSync resolves the command it runs
     // through the PATH it is given, not the one this process has.
-    for (const command of ['bash', 'sh', 'cat', 'cmp', 'cp', 'date', 'dirname', 'env', 'find', 'id',
-        'install', 'mkdir', 'mktemp', 'sort', 'tail', 'unlink', 'awk', ...extra]) {
+    for (const command of ['bash', 'sh', 'cat', 'chmod', 'cmp', 'cp', 'date', 'dirname', 'env', 'find',
+        'id', 'install', 'mkdir', 'mktemp', 'sort', 'stat', 'tail', 'unlink', 'awk', ...extra]) {
         const source = ['/usr/bin', '/bin', '/usr/sbin'].map((d) => path.join(d, command))
             .find((candidate) => fs.existsSync(candidate));
         assert.ok(source, `This test needs ${command} to exist somewhere ordinary`);
@@ -78,6 +79,35 @@ assert.doesNotMatch(preview.stdout, /apt-get install/, 'A declined group install
 assert.match(preview.stdout, /rofi\/active-theme\.rasi/,
     'Warn that the launcher needs the theme pointer install.sh writes');
 
+// Review Focus 1 again, the other half: the session's own group is not enough. The
+// configuration invokes programs phase 1 installs with the i3 desktop, and a machine
+// where install.sh never ran has none of them — so this script offers those rows too.
+const offered = (stdout) => {
+    const line = stdout.match(/Sway session packages\n {2}(.*)/);
+    assert.ok(line, 'The packages are printed before they are agreed to');
+    return line[1].split(' ');
+};
+const debianOffer = offered(preview.stdout);
+for (const name of ['kitty', 'rofi', 'pulseaudio-utils', 'brightnessctl', 'unicode-data',
+    'fonts-noto', 'fonts-noto-color-emoji', 'network-manager-gnome', 'blueman',
+    'xdg-user-dirs', 'libglib2.0-bin', 'gsettings-desktop-schemas', 'neovim']) {
+    assert.ok(debianOffer.includes(name),
+        `The session needs ${name}, which the sway group does not contain`);
+}
+// And it must not drag the X11 desktop in: this script installs no i3 and no Xorg.
+for (const name of ['i3-wm', 'i3status', 'i3lock', 'picom', 'xserver-xorg', 'xss-lock']) {
+    assert.ok(!debianOffer.includes(name),
+        `${name} belongs to install.sh, not to the Sway session`);
+}
+// The browser follows the release here exactly as it does in install.sh.
+assert.ok(debianOffer.includes('firefox-esr'), 'Debian gets the ESR browser');
+assert.ok(!debianOffer.includes('firefox'), 'Debian has no apt firefox');
+const ubuntuPreview = sway(['--dry-run'], ubuntu);
+assert.equal(ubuntuPreview.status, 0, ubuntuPreview.stderr);
+const ubuntuOffer = offered(ubuntuPreview.stdout);
+assert.ok(ubuntuOffer.includes('firefox'), "Ubuntu's own firefox package installs the snap");
+assert.ok(!ubuntuOffer.includes('firefox-esr'), 'Ubuntu has no firefox-esr');
+
 // The bundle: every file installed, scripts executable, and the conky fragment absent.
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-bundle-'));
@@ -99,6 +129,22 @@ assert.match(preview.stdout, /rofi\/active-theme\.rasi/,
     }
     assert.ok(!fs.existsSync(path.join(home, '.config', 'sway/config.d/30-conky.conf')),
         'The conky fragment belongs to the phase that installs conky');
+    // Every helper the configuration binds a key to must be on disk: a binding whose
+    // script was never installed is a key that does nothing and says nothing.
+    const bindings = fs.readFileSync(path.join(root, 'config/sway/config'), 'utf8');
+    const referenced = [...bindings.matchAll(/~\/\.config\/sway\/([\w-]+\.sh)/g)].map((m) => m[1]);
+    assert.ok(referenced.length >= 7, 'The configuration binds keys to helper scripts');
+    for (const script of new Set(referenced)) {
+        const target = path.join(home, '.config', 'sway', script);
+        assert.ok(fs.existsSync(target), `${script} is bound to a key but never installed`);
+        assert.equal(fs.statSync(target).mode & 0o777, 0o755, `${script} must be executable`);
+    }
+    // The theme pointer this script offers to write must point at a file it installs.
+    const pointer = fs.readFileSync(path.join(home, '.config/rofi/active-theme.rasi'), 'utf8');
+    const theme = pointer.match(/@theme "([^"]+)"/);
+    assert.ok(theme, 'The pointer names a theme');
+    assert.ok(fs.existsSync(path.join(home, '.config/rofi', theme[1])),
+        `The pointer names ${theme[1]}, which nothing installed`);
     // Review Focus 4: sway is not installed here, so validation is skipped with a reason.
     assert.match(result.stdout, /sway is not installed.*skipping the configuration check/i,
         'Say why the configuration was not validated');
@@ -147,10 +193,13 @@ assert.doesNotMatch(fs.readFileSync(path.join(root, 'config/i3/config'), 'utf8')
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-generated-'));
     const only = minimalPath(['jq']);
+    // A connected-but-disabled output reports no mode, and a HiDPI session reports its
+    // own scale: both are ordinary, and both were wrong in the first version of this.
     fs.writeFileSync(path.join(only, 'swaymsg'), `#!/bin/sh
 cat <<'JSON'
-[{"name":"DP-3","current_mode":{"width":2560,"height":1440}},
- {"name":"eDP-2","current_mode":{"width":1920,"height":1080}}]
+[{"name":"DP-3","current_mode":{"width":2560,"height":1440},"scale":2},
+ {"name":"eDP-2","current_mode":{"width":1920,"height":1080},"scale":1},
+ {"name":"HDMI-A-1","current_mode":null,"scale":1}]
 JSON
 `, {mode: 0o755});
     const result = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
@@ -160,8 +209,11 @@ JSON
     });
     assert.equal(result.status, 0, result.stderr);
     const generated = fs.readFileSync(path.join(home, '.config/sway/config.d/00-local.conf'), 'utf8');
-    assert.match(generated, /output DP-3 mode 2560x1440/, 'The real output, not eDP-1');
-    assert.match(generated, /output eDP-2 mode 1920x1080/, 'Every output, not just the first');
+    assert.match(generated, /output DP-3 mode 2560x1440 scale 2/,
+        'The real output, at the scale the session runs it');
+    assert.match(generated, /output eDP-2 mode 1920x1080 scale 1/, 'Every output, not just the first');
+    assert.doesNotMatch(generated, /nullxnull/, 'An output with no mode has no line to write');
+    assert.doesNotMatch(generated, /HDMI-A-1/, 'A disabled output is left to sway to enable');
     assert.match(result.stdout, /DP-3/, 'Show the profile before writing it');
     fs.rmSync(only, {recursive: true, force: true});
     fs.rmSync(home, {recursive: true, force: true});
@@ -181,6 +233,44 @@ JSON
         'A profile naming no outputs must not be written');
     assert.match(result.stdout, /swaymsg -t get_outputs/,
         'Say how to fill the profile in after the first login');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// A shell can outlive the compositor it was started from and still export SWAYSOCK.
+// The query then fails, and that must cost the user a sentence, not the rest of the run.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-stale-'));
+    const only = minimalPath(['jq']);
+    fs.writeFileSync(path.join(only, 'swaymsg'), '#!/bin/sh\nexit 1\n', {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(40),
+        env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: debian,
+            DEBIAN_SETUP_DMI_NAME: 'Generic Laptop', SWAYSOCK: path.join(home, 'gone')},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stderr, /Setup stopped/, 'A dead socket is not a crash');
+    assert.match(result.stdout, /swaymsg -t get_outputs/, 'Say how to write the profile later');
+    assert.match(result.stdout, /lightdm/, 'And carry on to the steps that follow');
+    const local = fs.readFileSync(path.join(home, '.config/sway/config.d/00-local.conf'), 'utf8');
+    assert.doesNotMatch(local, /Generated from swaymsg/, 'Nothing was generated from nothing');
+    fs.rmSync(only, {recursive: true, force: true});
+    fs.rmSync(home, {recursive: true, force: true});
+}
+// Inside a session, with jq not yet installed, the reason is jq — not the session.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sway-nojq-'));
+    const only = minimalPath();
+    fs.writeFileSync(path.join(only, 'swaymsg'), '#!/bin/sh\necho "[]"\n', {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'setup-sway.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'n\n'.repeat(40),
+        env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: debian,
+            DEBIAN_SETUP_DMI_NAME: 'Generic Laptop', SWAYSOCK: path.join(home, 'sock')},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /\bjq\b/, 'Name the missing tool');
+    assert.doesNotMatch(result.stdout, /Not running inside Sway/,
+        'The user is inside Sway; saying otherwise sends them to fix the wrong thing');
+    fs.rmSync(only, {recursive: true, force: true});
     fs.rmSync(home, {recursive: true, force: true});
 }
 

@@ -43,6 +43,31 @@ skipped=()
 # release's rows are skipped. The array is passed by name rather than printed because
 # a function read through $(...) or a process substitution runs in a subshell, where
 # its appends to unavailable and skipped would be thrown away.
+# Fills the named array with single rows looked up by their Arch name, or by their apt
+# name for the rows that have no Arch one. A script that needs part of a group it does
+# not install whole asks for those rows by name, and still gets the release's spelling:
+# setup-sway.sh installs the browser this way, and gets firefox-esr or firefox.
+# Usage: map_named_packages <map> <release> <array name> <name>...
+map_named_packages() {
+    local map=$1 want=$2
+    local -n _mnp_out=$3
+    shift 3
+    local list=() g arch apt where note name
+    _mnp_out=()
+    for name in "$@"; do
+        while IFS=$'\t' read -r g arch apt where note; do
+            [[ "$arch" == "$name" || ( "$arch" == '-' && "$apt" == "$name" ) ]] || continue
+            case "$where" in
+                none) unavailable+=("$arch ($note)") ;;
+                both) list+=("$apt") ;;
+                "$want") list+=("$apt") ;;
+                *) skipped+=("$apt ($note)") ;;
+            esac
+        done < <(tail -n +2 -- "$map")
+    done
+    (( ${#list[@]} )) || return 0
+    mapfile -t _mnp_out < <(printf '%s\n' "${list[@]}" | sort -u)
+}
 # Usage: map_group_packages <map> <group> <release> <array name>
 map_group_packages() {
     local map=$1 id=$2 want=$3 g arch apt where note
@@ -84,7 +109,17 @@ install_file() {
     local source=$1 relative=$2 mode=${3:-644} root=${4:-$target_config}
     local destination="$root/$relative"
     if [[ -f "$destination" ]] && cmp -s "$source" "$destination"; then
-        printf 'Unchanged: %s\n' "$destination"; return 0
+        # Same bytes is not the same file: install.sh writes the shared helpers 644 for
+        # the i3 session and setup-sway.sh installs them 755 for Sway, so the mode has
+        # to be corrected here or the second script would silently leave the first's.
+        local current
+        current=$(stat -c '%a' -- "$destination" 2>/dev/null || true)
+        if [[ "$current" == "$mode" ]]; then
+            printf 'Unchanged: %s\n' "$destination"; return 0
+        fi
+        printf 'Unchanged contents, wrong mode (%s): %s\n' "${current:-unknown}" "$destination"
+        run chmod -- "$mode" "$destination"
+        return 0
     fi
     if [[ -e "$destination" || -L "$destination" ]]; then
         ask "Back up and replace $destination?" || { declined+=("$destination"); return 0; }

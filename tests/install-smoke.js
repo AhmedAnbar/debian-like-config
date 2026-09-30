@@ -122,6 +122,10 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     for (const name of ['apt-get', 'systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
         fs.writeFileSync(path.join(homeBin, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
     }
+    // Same reason as the delegation block below: no step here may reach the network.
+    for (const [name, body] of [['curl', 'exit 1'], ['apt-cache', 'printf "  Candidate: 0.11.6-1\\n"']]) {
+        fs.writeFileSync(path.join(homeBin, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
+    }
     fs.writeFileSync(path.join(homeBin, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     const real = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(80),
@@ -140,6 +144,17 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     assert.ok(!fs.lstatSync(backupCopy).isSymbolicLink(),
         'A copied symlink is not a backup: the relative target no longer resolves from there');
     assert.equal(fs.readFileSync(backupCopy, 'utf8'), 'original i3 config\n', 'The original is recoverable');
+    // The Sway session is an optional addition, and declining it has to cost nothing:
+    // its dotfiles belong to setup-sway.sh. The portal preference especially — the X11
+    // session reads that file too, and nobody asked for Wayland here.
+    for (const directory of ['sway', 'waybar', 'mako', 'swaylock', 'xdg-desktop-portal']) {
+        assert.ok(!fs.existsSync(path.join(home, '.config', directory)),
+            `install.sh must leave ${directory}/ to setup-sway.sh`);
+    }
+    // What it does own is still installed, including the helpers both sessions share.
+    for (const relative of ['i3/config', 'i3/brightness.sh', 'i3/emoji.sh', 'rofi/i3-theme.rasi']) {
+        assert.ok(fs.existsSync(path.join(home, '.config', relative)), `Missing: ${relative}`);
+    }
     fs.rmSync(home, {recursive: true, force: true});
 }
 
@@ -156,6 +171,12 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
         fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\necho "${name} $*" >> ${log}\nexit 0\n`, {mode: 0o755});
     }
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    // This run delegates to setup-nvim.sh, which downloads a tarball when apt's Neovim
+    // is too old — and apt-cache answers nothing on a machine without apt. A test that
+    // reaches the network passes or fails with the network, so curl here is a stub that
+    // refuses, and the version apt offers is stubbed too.
+    fs.writeFileSync(path.join(stubs, 'curl'), `#!/bin/sh\necho "curl $*" >> ${log}\nexit 1\n`, {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'apt-cache'), '#!/bin/sh\nprintf "  Candidate: 0.11.6-1\\n"\n', {mode: 0o755});
     const result = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 120000, input: 'y\n'.repeat(120),
         env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
@@ -170,6 +191,8 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     // The summary has to name the backup directory: it is the only way back.
     assert.match(result.stdout, /Backups, when needed: .*\.local\/state\/debian-desktop-setup/);
     assert.match(result.stdout, /Alt\+D/, 'Tell the user how to open the launcher');
+    assert.doesNotMatch(calls, /^curl /m, 'Nothing in this suite may depend on a network');
+    assert.match(calls, /apt-get install -y neovim/, 'Apt is new enough here, so no tarball');
     fs.rmSync(home, {recursive: true, force: true});
 }
 
@@ -212,6 +235,10 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.mkdirSync(stubs);
     for (const name of ['apt-get', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
         fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    // Same reason as the delegation block below: no step here may reach the network.
+    for (const [name, body] of [['curl', 'exit 1'], ['apt-cache', 'printf "  Candidate: 0.11.6-1\\n"']]) {
+        fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
     }
     fs.writeFileSync(path.join(stubs, 'systemctl'), '#!/bin/sh\necho "systemctl: unit failed" >&2\nexit 1\n', {mode: 0o755});
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});

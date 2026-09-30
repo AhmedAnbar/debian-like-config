@@ -10,9 +10,8 @@ case "${1:-}" in
     '') ;;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2 ;;
 esac
-(( EUID != 0 )) || { printf 'Run as your normal user, not root.\n' >&2; exit 1; }
-ask() { local answer; read -r -p "$1 [y/N] " answer || return 1; [[ "$answer" == y || "$answer" == Y || "$answer" == yes ]]; }
-run() { printf '  '; printf '%q ' "$@"; printf '\n'; if ! "$dry_run"; then "$@"; fi; }
+source "$bundle_dir/lib/common.sh"
+require_normal_user
 config_root=${XDG_CONFIG_HOME:-$HOME/.config}
 # The editor tooling comes from the same map as everything else.
 mapfile -t tools < <(awk -F'\t' '$1 == "editor-tools" && $3 != "-" { print $3 }' "$bundle_dir/packages/apt-map.tsv" | sort -u)

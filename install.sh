@@ -92,7 +92,13 @@ if ask 'Install the desktop configuration bundle (each existing changed file ask
     while IFS= read -r -d '' source <&3; do
         relative=${source#"$bundle_dir/config/"}
         install_file "$source" "$relative"
-    done 3< <(find "$bundle_dir/config" -path "$bundle_dir/config/nvim" -prune -o -type f -print0 | sort -z)
+    # nvim belongs to setup-nvim.sh, and the Wayland session belongs to setup-sway.sh:
+    # a user who never asked for Sway must not find its configuration installed, least
+    # of all a portal preference the X11 session reads as well.
+    done 3< <(find "$bundle_dir/config" \( -path "$bundle_dir/config/nvim" \
+        -o -path "$bundle_dir/config/sway" -o -path "$bundle_dir/config/waybar" \
+        -o -path "$bundle_dir/config/mako" -o -path "$bundle_dir/config/swaylock" \
+        -o -path "$bundle_dir/config/xdg-desktop-portal" \) -prune -o -type f -print0 | sort -z)
     # The scripts must stay executable; plain configuration is installed mode 644 above.
     for script in i3/brightness.sh i3/emoji.sh i3/launcher.sh i3/touchpad.sh; do
         [[ -f "$bundle_dir/config/$script" ]] || continue
