@@ -64,13 +64,13 @@ pass unmodified.
 
 ## The package group
 
-A new `sway` group in `packages/apt-map.tsv`, mapping the 37 names in
+A new `sway` group in `packages/apt-map.tsv`, mapping the 38 names in
 `arch-desktop-setup/sway/packages.txt`. Verified in `debian:stable-slim` and
 `ubuntu:latest` on 2026-09-30:
 
 | Arch | apt | where | Why it differs |
 | --- | --- | --- | --- |
-| `polkit-gnome` | `mate-polkit` | both | `policykit-1-gnome` does not exist in Debian 13; MATE's GTK agent is its equivalent and is packaged in both releases, so one code path serves both |
+| `polkit-gnome` | `mate-polkit` | both | `policykit-1-gnome` does not exist in Debian 13; MATE's GTK agent is its equivalent, verified as 1.26.1-4 on Debian and 1.26.1-6 on Ubuntu, so one code path serves both |
 | `rofi-emoji` | `unicode-data` | both | Packaged nowhere; the bundled picker reads its emoji list from this package instead |
 | `libpulse` | `pulseaudio-utils` | both | Already corrected in phase 1: the volume keys need `pactl` |
 | `xorg-xwayland` | `xwayland` | both | The launcher is rofi, which is X11-only in Debian's 1.7.5 |
@@ -159,8 +159,17 @@ The `sway` package installs `/usr/share/wayland-sessions/sway.desktop`, so any
 existing greeter lists the session with no help from this installer. Phase 2
 therefore installs no greeter by default. The README documents
 `dbus-run-session sway` from a text console, and one optional step — declined
-unless accepted, like the mkcert CA in phase 1 — installs and enables `greetd`
-or `lightdm` and says which sessions it will offer.
+unless accepted, like the mkcert CA in phase 1 — installs and enables `lightdm`
+with `lightdm-gtk-greeter` and says which sessions it will offer.
+
+`lightdm` rather than `greetd`: it is what the Arch machine runs, so the two
+desktops behave alike; it lists X11 and Wayland sessions from
+`/usr/share/xsessions` and `/usr/share/wayland-sessions` with no configuration
+at all; and it is packaged in both releases (1.32.0 in each). `greetd` is the
+Wayland-native choice but needs a hand-written `config.toml` naming a greeter
+command, which is a second file to install, back up and test for a step that
+most runs will decline. Both `greetd` and `gtkgreet` are packaged in both
+releases, so switching later costs one step, not a redesign.
 
 ## Waybar
 
@@ -217,10 +226,6 @@ failure at startup.
 
 ## Decisions still open
 
-- Which greeter the optional step should offer first, `greetd` (Wayland-native,
-  needs a `config.toml`) or `lightdm` (what the Arch machine uses, X11-based but
-  starts Wayland sessions). The plan picks one and explains the choice; the step
-  stays off by default either way.
 - Whether phase 3 or phase 4 owns the Ubuntu browser question, given that
   `firefox-esr` is Debian-only and Ubuntu's apt `firefox` is a snap
   transitional package. Phase 1 deferred it to the vendor-repository work; this
