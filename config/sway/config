@@ -1,0 +1,137 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# Anbar's Catppuccin Sway desktop. i3's configuration is kept separately.
+set $mod Mod1
+set $term kitty
+set $bg #1e1e2e
+set $surface #313244
+set $muted #6c7086
+set $text #cdd6f4
+set $accent #b4befe
+set $urgent #f38ba8
+
+font pango:Noto Sans 10
+default_border pixel 1
+default_floating_border pixel 1
+gaps inner 6
+gaps outer 4
+floating_modifier $mod normal
+client.focused          $accent  $bg $text $accent  $accent
+client.focused_inactive $surface $bg $text $muted   $surface
+client.unfocused        $surface $bg $text $muted   $surface
+client.urgent           $urgent  $bg $text $urgent  $urgent
+client.background $bg
+output * bg $bg solid_color
+xwayland enable
+
+# Native libinput/XKB settings. Do not run xinput, xrandr or setxkbmap here.
+input type:keyboard {
+    xkb_layout us,ara
+    xkb_options grp:shift_caps_toggle
+}
+input type:touchpad {
+    tap enabled
+    scroll_method two_finger
+    natural_scroll enabled
+    dwt enabled
+    pointer_accel 0.3
+}
+input type:touch {
+    events enabled
+}
+
+bindsym $mod+Return exec $term
+bindsym $mod+Shift+q kill
+bindsym $mod+d exec sh ~/.config/sway/launcher.sh
+# Explicit native Wayland browser launch for testing touchscreen scrolling.
+bindsym $mod+b exec env MOZ_ENABLE_WAYLAND=1 firefox
+bindsym --release Mod4+period exec sh ~/.config/sway/emoji.sh
+bindsym --release XF86EmojiPicker exec sh ~/.config/sway/emoji.sh
+
+bindsym --locked XF86AudioRaiseVolume exec pactl set-sink-volume @DEFAULT_SINK@ +10%
+bindsym --locked XF86AudioLowerVolume exec pactl set-sink-volume @DEFAULT_SINK@ -10%
+bindsym --locked XF86AudioMute exec pactl set-sink-mute @DEFAULT_SINK@ toggle
+bindsym --locked XF86AudioMicMute exec pactl set-source-mute @DEFAULT_SOURCE@ toggle
+bindsym --locked XF86MonBrightnessDown exec sh ~/.config/sway/brightness.sh down
+bindsym --locked XF86MonBrightnessUp exec sh ~/.config/sway/brightness.sh up
+bindsym $mod+c exec sh ~/.config/sway/clipboard.sh
+bindsym --release Print exec sh ~/.config/sway/screenshot.sh
+bindsym --release $mod+Shift+s exec sh ~/.config/sway/screenshot.sh
+# Locking is manual only; swayidle just blanks the screen. Alt+Control+l still works.
+bindsym $mod+l exec sh ~/.config/sway/lock.sh
+bindsym $mod+Control+l exec sh ~/.config/sway/lock.sh
+
+# Match the existing i3 navigation keys.
+bindsym $mod+j focus left
+bindsym $mod+k focus down
+bindsym $mod+semicolon focus right
+bindsym $mod+Left focus left
+bindsym $mod+Down focus down
+bindsym $mod+Up focus up
+bindsym $mod+Right focus right
+bindsym $mod+Shift+j move left
+bindsym $mod+Shift+k move down
+bindsym $mod+Shift+l move up
+bindsym $mod+Shift+semicolon move right
+bindsym $mod+Shift+Left move left
+bindsym $mod+Shift+Down move down
+bindsym $mod+Shift+Up move up
+bindsym $mod+Shift+Right move right
+bindsym $mod+h split h
+bindsym $mod+v split v
+bindsym $mod+f fullscreen toggle
+bindsym $mod+s layout stacking
+bindsym $mod+w layout tabbed
+bindsym $mod+e layout toggle split
+bindsym $mod+Shift+space floating toggle
+bindsym $mod+space focus mode_toggle
+bindsym $mod+a focus parent
+
+bindsym $mod+1 workspace number 1
+bindsym $mod+2 workspace number 2
+bindsym $mod+3 workspace number 3
+bindsym $mod+4 workspace number 4
+bindsym $mod+5 workspace number 5
+bindsym $mod+6 workspace number 6
+bindsym $mod+7 workspace number 7
+bindsym $mod+8 workspace number 8
+bindsym $mod+9 workspace number 9
+bindsym $mod+0 workspace number 10
+bindsym $mod+Shift+1 move container to workspace number 1
+bindsym $mod+Shift+2 move container to workspace number 2
+bindsym $mod+Shift+3 move container to workspace number 3
+bindsym $mod+Shift+4 move container to workspace number 4
+bindsym $mod+Shift+5 move container to workspace number 5
+bindsym $mod+Shift+6 move container to workspace number 6
+bindsym $mod+Shift+7 move container to workspace number 7
+bindsym $mod+Shift+8 move container to workspace number 8
+bindsym $mod+Shift+9 move container to workspace number 9
+bindsym $mod+Shift+0 move container to workspace number 10
+
+bindsym $mod+Shift+c reload
+# Sway does not support i3's in-place restart; both shortcuts safely reload.
+bindsym $mod+Shift+r reload
+bindsym $mod+Shift+e exec swaynag -t warning -m 'Log out of Sway? Save your work first.' -B 'Log out' 'swaymsg exit'
+mode "resize" {
+    bindsym j resize shrink width 10 px or 10 ppt
+    bindsym k resize grow height 10 px or 10 ppt
+    bindsym l resize shrink height 10 px or 10 ppt
+    bindsym semicolon resize grow width 10 px or 10 ppt
+    bindsym Left resize shrink width 10 px or 10 ppt
+    bindsym Down resize grow height 10 px or 10 ppt
+    bindsym Up resize shrink height 10 px or 10 ppt
+    bindsym Right resize grow width 10 px or 10 ppt
+    bindsym Return mode "default"
+    bindsym Escape mode "default"
+    bindsym $mod+r mode "default"
+}
+bindsym $mod+r mode "resize"
+
+# Managed as Sway's bar, not an exec_always that duplicates bars on reload.
+bar {
+    swaybar_command waybar
+}
+
+# Distribution-provided environment integration, followed by local overrides.
+include /etc/sway/config.d/*
+include ~/.config/sway/config.d/*.conf
+exec sh ~/.config/sway/session-start.sh
