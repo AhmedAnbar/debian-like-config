@@ -158,4 +158,25 @@ for (const script of ['setup-zsh.sh', 'setup-nvim.sh']) {
     assert.doesNotMatch(body, /^ask\(\) \{/m, `${script} must not redefine ask`);
     assert.doesNotMatch(body, /^run\(\) \{/m, `${script} must not redefine run`);
 }
+// try records a failure exactly as attempt does, and still returns the command's
+// status, so a caller can take the other branch. attempt returns 0 by design.
+{
+    const tryScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-try-smoke-'));
+    const probe = `
+        dry_run=false; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        if try sh -c 'exit 3'; then printf 'try: returned zero\\n'; else printf 'try: returned %s\\n' "$?"; fi
+        if attempt sh -c 'exit 3'; then printf 'attempt: returned zero\\n'; else printf 'attempt: nonzero\\n'; fi
+        printf 'failed count: %s\\n' "\${#failed[@]}"
+        if try true; then printf 'try success: zero\\n'; fi
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: tryScratch}});
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /try: returned 3/, "try must return the command's own status");
+    assert.match(result.stdout, /attempt: returned zero/, 'attempt still returns 0, by design');
+    assert.match(result.stdout, /failed count: 2/, 'Both record the failure');
+    assert.match(result.stdout, /try success: zero/, 'And try returns 0 when the command works');
+    fs.rmSync(tryScratch, {recursive: true, force: true});
+}
 console.log('setup-smoke: all checks passed');

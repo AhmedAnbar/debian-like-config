@@ -36,6 +36,112 @@ detect_release() {
             esac ;;
     esac
 }
+# Test seams, as DEBIAN_SETUP_MAP and DEBIAN_SETUP_OS_RELEASE are elsewhere: a
+# prefix for the system paths the vendor-repository and tarball helpers write to,
+# so a test can exercise them without a root filesystem of its own.
+apt_root=${DEBIAN_SETUP_APT_ROOT:-}
+opt_root=${DEBIAN_SETUP_OPT_ROOT:-/opt}
+share_root=${DEBIAN_SETUP_SHARE_ROOT:-/usr/share}
+# Records the failure as attempt does, and returns the command's status so the
+# caller can take the other branch. attempt returns 0 unconditionally, by design,
+# which is right for a step that should not stop the run and useless for a step
+# whose next line depends on whether this one worked.
+try() {
+    local status=0
+    run "$@" || status=$?
+    (( status == 0 )) || failed+=("$*")
+    return "$status"
+}
+# Adds a third-party apt repository, verifies it, and removes it again when it
+# cannot be verified.
+# Usage: add_vendor_repo <id> <key url> <sources line> <package to verify> [pin file]
+add_vendor_repo() {
+    local id=$1 key_url=$2 line=$3 package=$4 pin=${5:-}
+    local keyring="$apt_root/etc/apt/keyrings/$id.gpg"
+    local sources="$apt_root/etc/apt/sources.list.d/$id.list"
+    local preferences="$apt_root/etc/apt/preferences.d/$id"
+    printf '\nRepository %s\n' "$id"
+    printf '  key:     %s\n' "$key_url"
+    printf '  sources: %s\n' "$line"
+    [[ -z "$pin" ]] || printf '  pin:     %s\n' "$preferences"
+    if "$dry_run"; then
+        printf '  preview only: no key fetched, no sources file written\n'
+        return 0
+    fi
+    local temp
+    temp=$(mktemp -d)
+    # The key lands before the sources file, and that order is the safety property:
+    # a sources file whose key is missing makes every later apt-get update fail,
+    # including the deliberately fatal one in install.sh. That would break a
+    # working machine instead of merely failing this step.
+    if ! try curl -fsS --max-time 120 -o "$temp/key.asc" -- "$key_url"; then
+        rm -rf -- "$temp"
+        printf 'Could not fetch the signing key, so %s was not added.\n' "$id" >&2
+        return 1
+    fi
+    if ! try gpg --dearmor -o "$temp/key.gpg" -- "$temp/key.asc"; then
+        rm -rf -- "$temp"
+        printf 'The key for %s is not a usable PGP key; nothing was changed.\n' "$id" >&2
+        return 1
+    fi
+    run sudo install -Dm644 -- "$temp/key.gpg" "$keyring"
+    printf '%s\n' "$line" > "$temp/sources"
+    run sudo install -Dm644 -- "$temp/sources" "$sources"
+    [[ -z "$pin" ]] || run sudo install -Dm644 -- "$pin" "$preferences"
+    rm -rf -- "$temp"
+    # Its own update, never the shared one: this one is allowed to fail.
+    run sudo apt-get update || printf 'apt-get update reported a problem; checking the candidate anyway.\n' >&2
+    # And the verdict is a candidate, not an exit status. apt-get update exits 0
+    # when a vendor host is unreachable: it prints "W: Failed to fetch" and keeps
+    # using the old lists, so an exit status cannot tell success from an outage.
+    local candidate
+    candidate=$(apt-cache policy -- "$package" 2>/dev/null | awk '/Candidate:/{print $2; exit}')
+    if [[ "$candidate" =~ ^[0-9] ]]; then
+        printf 'Repository %s is live: %s %s\n' "$id" "$package" "$candidate"
+        return 0
+    fi
+    printf 'The %s repository did not offer %s, so it is being removed again.\n' "$id" "$package" >&2
+    run sudo rm -f -- "$sources" "$keyring"
+    [[ -z "$pin" ]] || run sudo rm -f -- "$preferences"
+    run sudo apt-get update || true
+    failed+=("add_vendor_repo $id")
+    return 1
+}
+# Installs an application that ships as a tarball into a versioned directory, with
+# a current symlink so a bad update is one symlink away from being undone.
+# Usage: install_tarball_app <name> <archive> <version> <expected entry> <desktop file> [icon]
+install_tarball_app() {
+    local name=$1 archive=$2 version=$3 expect=$4 desktop=$5 icon=${6:-}
+    local app="$opt_root/$name" versioned="$opt_root/$name/$version"
+    printf '\nInstalling %s %s into %s\n' "$name" "$version" "$versioned"
+    if "$dry_run"; then
+        printf '  preview only: nothing unpacked\n'
+        return 0
+    fi
+    # Postman publishes no checksum and no signature at all, so a clean listing
+    # containing the expected entry is the only integrity gate available. It runs
+    # before anything under the install root is touched, never after.
+    local listing
+    if ! listing=$(tar -tf "$archive" 2>/dev/null); then
+        printf '%s is not a readable archive, so %s was not touched.\n' "$archive" "$app" >&2
+        failed+=("install_tarball_app $name")
+        return 1
+    fi
+    if ! printf '%s\n' "$listing" | grep -qF -- "$expect"; then
+        printf 'The archive does not contain %s, so it is not the %s build it claims to be.\n' \
+            "$expect" "$name" >&2
+        failed+=("install_tarball_app $name")
+        return 1
+    fi
+    run sudo install -d -m 0755 -- "$versioned"
+    run sudo tar -xf "$archive" -C "$versioned" --strip-components=1
+    # A relative link, so moving the install root cannot turn it into a dead one.
+    run sudo ln -sfn -- "$version" "$app/current"
+    run sudo install -Dm644 -- "$desktop" "$share_root/applications/$(basename -- "$desktop")"
+    [[ -z "$icon" ]] || run sudo install -Dm644 -- "$icon" \
+        "$share_root/icons/hicolor/128x128/apps/$name.png"
+    printf '%s %s is installed; the previous version is still under %s.\n' "$name" "$version" "$app"
+}
 unavailable=()
 skipped=()
 # Fills the named array with the apt names one group installs on one release, and
