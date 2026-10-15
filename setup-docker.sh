@@ -6,7 +6,7 @@
 # touches an engine that is already installed: docker-ce Conflicts with docker.io,
 # and choosing which engine a working machine runs is not an installer's decision.
 set -Eeuo pipefail
-trap 'printf "Docker setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Docker setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -55,7 +55,10 @@ vendor_key="https://download.docker.com/linux/$release/gpg"
 vendor_line="deb [arch=$vendor_arch signed-by=$etc_root/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$release $vendor_suite stable"
 lazydocker_version=0.25.2
 lazydocker_url="https://github.com/jesseduffield/lazydocker/releases/download/v$lazydocker_version/lazydocker_${lazydocker_version}_Linux_x86_64.tar.gz"
-machine=$(uname -m)
+# Guarded like the probe above, and for the same reason: a bare command substitution at
+# the top level aborts before the EXIT trap exists, and uname is the kind of thing a
+# minimal container leaves out.
+machine=$(uname -m 2>/dev/null || true)
 printf 'Docker setup — engine, compose, the docker group and lazydocker\n'
 printf 'Copyright (C) 2026 AhmedAnbar. GPL-3.0-only; no warranty. See LICENSE.\n'
 printf 'Detected %s (%s family).\n' "${distro_name:-$release}" "$family"
@@ -107,6 +110,8 @@ summary() {
     printf 'Group membership takes effect at your next login, not in this shell. Check it with: id -nG\n'
     printf 'This run could not verify that the daemon starts, that a container runs, or that\n'
     printf 'group membership works: all three need a reboot or a new session to show.\n'
+    printf 'lazydocker %s is a pinned version, not a lookup: re-running this script installs\n' "$lazydocker_version"
+    printf 'the same one. Newer releases are at github.com/jesseduffield/lazydocker/releases.\n'
     printf 'Rootless Docker is deliberately not offered here: it is an alternative to the docker\n'
     printf 'group, and a machine set up half each way is worse than either.\n'
     if (( status == 0 && ${#failed[@]} )); then exit 1; fi
@@ -222,8 +227,11 @@ if ask "Install lazydocker $lazydocker_version from GitHub?"; then
             printf 'installed. Retry later, or fetch %s yourself.\n' "$lazydocker_url" >&2
             failed+=("lazydocker $lazydocker_version: the download is not its archive")
         else
-            attempt tar -xzf "$lazydocker_temp/lazydocker.tar.gz" -C "$lazydocker_temp" lazydocker
-            attempt install -Dm755 -- "$lazydocker_temp/lazydocker" "$HOME/.local/bin/lazydocker"
+            # try for the extract: installing a file that was never unpacked fails too,
+            # and one cause recording two failures reads like two separate problems.
+            if try tar -xzf "$lazydocker_temp/lazydocker.tar.gz" -C "$lazydocker_temp" lazydocker; then
+                attempt install -Dm755 -- "$lazydocker_temp/lazydocker" "$HOME/.local/bin/lazydocker"
+            fi
             case ":$PATH:" in
                 *":$HOME/.local/bin:"*) ;;
                 *) printf '%s/.local/bin is not on your PATH, so the binary is installed and\n' "$HOME"

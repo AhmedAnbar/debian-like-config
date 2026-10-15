@@ -30,7 +30,7 @@ const releases = {
 // sshd exists at all -- the same trick tests/setup-sway-smoke.js uses for sway.
 const scenario = ({
     answers = 'n\n'.repeat(20), release = 'debian', keys = null,
-    sshd = 'ok', args = [],
+    sshd = 'ok', args = [], otherDropins = {}, effective = null,
 } = {}) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hardening-'));
     const log = path.join(home, 'calls');
@@ -60,11 +60,29 @@ const scenario = ({
     if (sshd !== 'absent') {
         // The stub records what it was handed and whether the destination already
         // existed when it ran: that is how "validated before installed" is proved.
+        //
+        // -T is answered separately, because what sshd would really do with two
+        // drop-ins is not something a stub should be trusted to model. sshd uses the
+        // FIRST value it obtains for a keyword and Debian's sshd_config includes
+        // sshd_config.d/*.conf at line 12, so among drop-ins the lowest-numbered file
+        // wins: verified in a debian:trixie container, where a 50-*.conf saying
+        // "PasswordAuthentication yes" leaves `sshd -T` reporting yes even with
+        // 99-hardening.conf saying no. The `effective` knob is that outcome.
         stub('sshd', `echo "sshd $*" >> ${log}
+case "$*" in
+  *-T*) printf 'passwordauthentication ${effective || 'no'}\\n'
+        printf 'permitrootlogin no\\nkbdinteractiveauthentication no\\nx11forwarding no\\n'
+        exit 0 ;;
+esac
 if [ -e ${dropin} ]; then echo "sshd ran with the drop-in already installed" >> ${log}; fi
 for a in "$@"; do last=$a; done
 cat "$last" >> ${seen} 2>/dev/null
 exit ${sshd === 'ok' ? 0 : 255}`);
+    }
+    for (const [name, body] of Object.entries(otherDropins)) {
+        const other = path.join(sshRoot, 'etc/ssh/sshd_config.d', name);
+        fs.mkdirSync(path.dirname(other), {recursive: true});
+        fs.writeFileSync(other, body);
     }
     if (keys !== null) {
         fs.mkdirSync(path.join(home, '.ssh'), {recursive: true});
@@ -128,6 +146,12 @@ const realKey = 'restrict,pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJexampleexamp
     const s = scenario({answers: 'y\n'.repeat(20), keys: realKey, release: 'debian'});
     assert.equal(s.result.status, 0, s.out);
     assert.match(s.log, /apt-get install[^\n]*openssh-server/, 'Install the server package');
+    // On a machine that has never run apt -- a fresh install, which is exactly what
+    // this bundle is for -- an install with no update first fails on missing lists.
+    const updateAt = s.log.search(/apt-get update/);
+    const installAt = s.log.search(/apt-get install/);
+    assert.ok(updateAt >= 0, 'The package lists are refreshed before the only install here');
+    assert.ok(updateAt < installAt, 'And refreshed before it, not after');
     // Guard 2: sshd -t -f ran, on a staged file, before anything was installed.
     const validation = s.log.match(/sshd -t -f (\S+)/);
     assert.ok(validation, 'The staged file is validated with sshd -t -f');
@@ -243,6 +267,35 @@ const realKey = 'restrict,pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJexampleexamp
         assert.doesNotMatch(body, new RegExp(`^${helper}\\(\\) \\{`, 'm'),
             `${helper} belongs to lib/common.sh and must not be redefined`);
     }
+}
+
+// A lower-numbered drop-in beats 99-hardening.conf, silently. sshd takes the first
+// value it obtains for each keyword and the Include sits at the top of sshd_config, so
+// Ubuntu's own 50-cloud-init.conf with "PasswordAuthentication yes" wins -- after this
+// script has told the user it set it to no. Telling someone their machine no longer
+// accepts passwords when it does is the worst thing this script could do, so the
+// effective configuration is read back and the disagreement reported.
+{
+    const s = scenario({answers: 'y\n'.repeat(20), keys: 'ssh-ed25519 AAAAC3Nz real@key\n',
+        otherDropins: {'50-cloud-init.conf': 'PasswordAuthentication yes\n'},
+        effective: 'yes'});
+    assert.match(s.result.stdout, /50-cloud-init\.conf/,
+        'The other drop-ins are named, because they decide the outcome');
+    assert.match(s.result.stdout + s.result.stderr, /passwordauthentication yes|still accepts password/i,
+        'The effective value is read back and reported, not assumed');
+    assert.match(s.result.stdout, /Steps that failed:|did not take effect/i,
+        'A setting that did not take is a failure, not a success');
+    assert.notEqual(s.result.status, 0, 'And the run says so to whatever called it');
+    cleanup(s);
+}
+
+// When nothing is in the way, the read-back confirms it rather than staying silent.
+{
+    const s = scenario({answers: 'y\n'.repeat(20), keys: 'ssh-ed25519 AAAAC3Nz real@key\n'});
+    assert.match(s.result.stdout, /passwordauthentication no/,
+        'The effective values are shown, so the user can see what the machine will do');
+    assert.doesNotMatch(s.result.stdout, /did not take effect/, 'And nothing is reported wrong');
+    cleanup(s);
 }
 
 fs.rmSync(shared, {recursive: true, force: true});

@@ -108,18 +108,54 @@ add_vendor_repo() {
     run sudo install -Dm644 -- "$temp/sources" "$sources"
     [[ -z "$pin" ]] || run sudo install -Dm644 -- "$pin" "$preferences"
     rm -rf -- "$temp"
-    # Its own update, never the shared one: this one is allowed to fail.
-    run sudo apt-get update || printf 'apt-get update reported a problem; checking the candidate anyway.\n' >&2
-    # And the verdict is a candidate, not an exit status. apt-get update exits 0
-    # when a vendor host is unreachable: it prints "W: Failed to fetch" and keeps
-    # using the old lists, so an exit status cannot tell success from an outage.
-    local candidate
+    # Its own update, and scoped to the file this run just wrote: Dir::Etc::sourcelist
+    # plus an empty sourceparts means a third-party repository that was already broken
+    # before this script ran cannot be mistaken for this one failing, and this one
+    # failing cannot hide behind someone else's warnings. List-Cleanup=0 keeps the
+    # other repositories' lists, which a scoped update would otherwise discard.
+    local update_ok=true
+    run sudo apt-get update \
+        -o Dir::Etc::sourcelist="$sources" \
+        -o Dir::Etc::sourceparts=/dev/null \
+        -o APT::Get::List-Cleanup=0 || update_ok=false
+    # Two things have to be true, and neither is sufficient alone.
+    #
+    # The exit status, because a file that breaks apt exits 100 here -- a suite the
+    # vendor does not carry, or a keyring apt cannot read -- and leaving that file in
+    # place breaks every later apt-get update on the machine, including the
+    # deliberately fatal one in install.sh. Proved in a container: a 404 suite exits
+    # 100, an unreachable host exits 0.
+    #
+    # And the origin, because a numeric candidate proves nothing. apt reports one for
+    # any installed package out of /var/lib/dpkg/status with no repository configured
+    # at all, so on the second run of any script that uses this helper -- the run that
+    # is supposed to keep the application updated -- the candidate check was satisfied
+    # whatever had happened. What proves this repository works is the candidate coming
+    # from this repository's own host.
+    local host candidate origin_ok
+    host=${line#*://}
+    host=${host%%/*}
     candidate=$(apt-cache policy -- "$package" 2>/dev/null | awk '/Candidate:/{print $2; exit}')
-    if [[ "$candidate" =~ ^[0-9] ]]; then
-        printf 'Repository %s is live: %s %s\n' "$id" "$package" "$candidate"
+    origin_ok=$(apt-cache policy -- "$package" 2>/dev/null | awk -v host="$host" '
+        { sub(/^ *\*\*\* /, "   ") }
+        /^ *Candidate:/ { cand = $2; next }
+        /^ +[^ ]+ [0-9]+$/ { inblock = ($1 == cand); next }
+        inblock && index($0, host) { print "yes"; found = 1; exit }
+        END { if (!found) print "no" }')
+    if "$update_ok" && [[ "$candidate" =~ ^[0-9] ]] && [[ "$origin_ok" == yes ]]; then
+        printf 'Repository %s is live: %s %s, from %s\n' "$id" "$package" "$candidate" "$host"
         return 0
     fi
-    printf 'The %s repository did not offer %s, so it is being removed again.\n' "$id" "$package" >&2
+    if ! "$update_ok"; then
+        printf 'apt-get update rejected the %s repository, so it is being removed again:\n' "$id" >&2
+        printf 'leaving it in place would make every later apt-get update on this machine fail.\n' >&2
+    elif [[ "$candidate" =~ ^[0-9] ]]; then
+        printf 'The %s repository did not offer %s -- the candidate %s comes from somewhere\n' \
+            "$id" "$package" "$candidate" >&2
+        printf 'else, not from %s -- so it is being removed again.\n' "$host" >&2
+    else
+        printf 'The %s repository did not offer %s, so it is being removed again.\n' "$id" "$package" >&2
+    fi
     run sudo rm -f -- "$sources" "$keyring"
     [[ -z "$pin" ]] || run sudo rm -f -- "$preferences"
     run sudo apt-get update || true

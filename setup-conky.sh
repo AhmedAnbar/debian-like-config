@@ -5,7 +5,7 @@
 # autostarting a panel no earlier phase installs is a silent login failure, so the
 # autostart arrives here, together with the program it starts.
 set -Eeuo pipefail
-trap 'printf "Conky setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Conky setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -104,7 +104,10 @@ fi
 printf '\nThe panel ships three palettes, matching the three Rofi themes install.sh offers.\n'
 if ask 'Choose the panel theme now (Alt+Shift+T changes it later)?'; then
     printf '1) Catppuccin  2) Nord  3) Dracula\n'
-    read -r -p 'Theme [1]: ' choice
+    # || choice=, because a closed stdin must take the default rather than abort the
+    # run under set -e: every step after this one would be skipped, including the
+    # ones that matter more than a colour.
+    read -r -p 'Theme [1]: ' choice || choice=
     case "$choice" in
         2) theme=nord ;;
         3) theme=dracula ;;
@@ -132,16 +135,26 @@ if ask 'Start the panel in your Sway session?'; then
 fi
 # i3 has no drop-in directory in this repository's configuration: it is one file, which
 # install.sh replaces whole. Appending to it would duplicate the lines on the second run,
-# and replacing it would discard the user's own edits, so the lines are printed instead.
-printf '\ni3 is configured as a single file, so its two lines are yours to add:\n'
-printf '\n'
-printf '  # Conky system panel (no-op until conky is installed); Alt+Shift+T picks a theme or Off.\n'
-printf '  exec --no-startup-id sh ~/.config/conky/start.sh\n'
-printf '  bindsym $mod+Shift+t exec --no-startup-id sh ~/.config/conky/switch.sh\n'
-printf '\n'
-printf 'Add them to %s/i3/config, next to the nm-applet and blueman-applet autostarts,\n' "$target_config"
-printf 'then reload i3 with Alt+Shift+R.\n'
-if ask 'Keep those lines on disk as ~/.config/conky/i3-conky.conf to paste from?'; then
-    install_file "$bundle_dir/config/conky/sessions/i3-conky.conf" conky/i3-conky.conf
+# and replacing it would discard the user's own edits, so the lines are printed instead --
+# but only to someone who does not already have them. The configuration this repository
+# installs carries them, and a second exec would start a second panel: both races through
+# start.sh find no pid file, both start a conky, and the second overwrites the pid file,
+# leaving one panel that switch.sh off cannot reach.
+i3_config="$target_config/i3/config"
+if [[ -f "$i3_config" ]] && grep -q 'conky/start\.sh' "$i3_config"; then
+    printf '\n%s already autostarts the panel, so there is nothing to add there.\n' "$i3_config"
+    printf 'Alt+Shift+T picks a theme or Off; reload i3 with Alt+Shift+R if it is running.\n'
+else
+    printf '\ni3 is configured as a single file, so its two lines are yours to add:\n'
+    printf '\n'
+    printf '  # Conky system panel (no-op until conky is installed); Alt+Shift+T picks a theme or Off.\n'
+    printf '  exec --no-startup-id sh ~/.config/conky/start.sh\n'
+    printf '  bindsym $mod+Shift+t exec --no-startup-id sh ~/.config/conky/switch.sh\n'
+    printf '\n'
+    printf 'Add them to %s, next to the nm-applet and blueman-applet autostarts,\n' "$i3_config"
+    printf 'then reload i3 with Alt+Shift+R.\n'
+    if ask 'Keep those lines on disk as ~/.config/conky/i3-conky.conf to paste from?'; then
+        install_file "$bundle_dir/config/conky/sessions/i3-conky.conf" conky/i3-conky.conf
+    fi
 fi
 finished=true

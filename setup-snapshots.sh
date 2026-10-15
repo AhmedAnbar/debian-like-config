@@ -4,7 +4,7 @@
 # btrfs snapshots: btrbk on a timer, and snapper as a separate, louder opt-in.
 # Everything here is btrfs-only, so the filesystem is read before anything is asked.
 set -Eeuo pipefail
-trap 'printf "Snapshot setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Snapshot setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -176,10 +176,21 @@ fi
 # error on every run until it exists. A subvolume rather than a plain directory, so the
 # snapshots are not inside the subvolume being snapshotted.
 printf '\nbtrbk writes its snapshots into %s, which it will not create itself.\n' "$snapshot_dir"
-if [[ -d "$volume_dir" ]]; then
+# A directory is not a mount: an empty /mnt/btrfs-root on the btrfs root is a plain
+# directory that btrfs subvolume create succeeds inside, which looks like success and
+# leaves btrbk snapshotting a path that is not the top-level subvolume. findmnt answers
+# the question that was actually being asked.
+volume_fstype=$(findmnt -no FSTYPE -- "$volume_dir" 2>/dev/null || true)
+if [[ "$volume_fstype" == btrfs ]]; then
     if ask "Create $snapshot_dir as a btrfs subvolume?"; then
         attempt sudo btrfs subvolume create "$snapshot_dir"
     fi
+elif [[ -d "$volume_dir" ]]; then
+    printf '%s exists but nothing is mounted there (findmnt reports %s), so it is a plain\n' \
+        "$volume_dir" "${volume_fstype:-nothing}"
+    printf 'directory on this filesystem. Creating the snapshot subvolume inside it would\n'
+    printf 'succeed and snapshot the wrong place, so it is left alone.\n'
+    printf 'Mount the top-level subvolume there, then run: sudo btrfs subvolume create %s\n' "$snapshot_dir"
 else
     printf '%s is not mounted here, so the snapshot directory cannot be created yet.\n' "$volume_dir"
     printf 'Mount the top-level subvolume there, then run: sudo btrfs subvolume create %s\n' "$snapshot_dir"

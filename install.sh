@@ -4,7 +4,7 @@
 set -Eeuo pipefail
 # BASH_LINENO[0] is the line that called the function the error happened in, so a failure
 # inside run() reports the step that ran, not run()'s own body. Empty at the top level.
-trap 'printf "Setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 [[ -d "$bundle_dir/config" ]] || { printf 'Keep install.sh with its config folder.\n' >&2; exit 1; }
 dry_run=false
@@ -42,6 +42,7 @@ summary() {
     printf 'Keyboard: English (US) + Arabic. Shift+Caps Lock switches layouts after login.\n'
     printf 'No login manager is installed in this phase: use the one you have, or startx with the bundled xinit.\n'
     printf 'Sway is available with: bash setup-sway.sh\n'
+    printf 'Neovim and its plugins: bash setup-nvim.sh (the editor-tools group lives there)\n'
     if (( ${#not_run_here[@]} )); then
         printf 'Not installed here, and each still one command away:\n'
         printf '  %s\n' "${not_run_here[@]}"
@@ -49,6 +50,11 @@ summary() {
     # A run with failed steps must not report success to whatever called this script.
     if (( status == 0 && ${#failed[@]} )); then exit 1; fi
 }
+# Declared before the trap that prints it: a run that ends between installing the
+# trap and reaching the delegation section -- an unreadable map, a map with no
+# groups -- would otherwise die in the trap itself under set -u, hiding the real
+# cause behind an unbound variable.
+not_run_here=()
 trap summary EXIT
 # Overridable so the tests can present a map with a group this file has never seen.
 map=${DEBIAN_SETUP_MAP:-$bundle_dir/packages/apt-map.tsv}
@@ -62,7 +68,6 @@ declare -A group_label=(
     [shell]='Zsh and its completion plugins'
 )
 packages=()
-not_run_here=()
 group() {
     # Not named "list": map_group_packages takes the array by name, and a nameref
     # pointing at a local of the same name is a circular reference bash refuses.
@@ -142,7 +147,10 @@ if ask 'Install the desktop configuration bundle (each existing changed file ask
 fi
 if ask 'Choose the Rofi theme for the installed launcher?'; then
     printf '1) Catppuccin  2) Nord  3) Dracula\n'
-    read -r -p 'Theme [1]: ' choice
+    # || choice=, because a closed stdin must take the default rather than abort the
+    # run under set -e: every step after this one would be skipped, including the
+    # ones that matter more than a colour.
+    read -r -p 'Theme [1]: ' choice || choice=
     case "$choice" in
         2) theme=i3-theme-nord.rasi ;;
         3) theme=i3-theme-dracula.rasi ;;
@@ -220,10 +228,13 @@ declare -A delegate_prompt=(
     [setup-snapshots.sh]='Set up btrfs snapshots (btrbk on a timer, snapper separately)?'
     [setup-hardening.sh]='Harden SSH on this machine? It changes how you can log in to it.'
 )
-not_run_here=()
-printf '\nThese install one application or system feature each. Declining costs nothing: the\n'
-printf 'summary names the command for every one you say no to.\n'
-for script in "${delegate_scripts[@]}"; do
+# Nothing to say when there is nothing to offer: an empty list is how the tests keep a
+# run hermetic, and a heading with no questions under it would be a puzzle.
+if (( ${#delegate_scripts[@]} )); then
+    printf '\nThese install one application or system feature each. Declining costs nothing: the\n'
+    printf 'summary names the command for every one you say no to.\n'
+fi
+for script in ${delegate_scripts[@]+"${delegate_scripts[@]}"}; do
     [[ -n "$script" ]] || continue
     if [[ ! -r "$bundle_dir/$script" ]]; then
         printf 'Not in this bundle, so it cannot be offered: %s\n' "$script" >&2

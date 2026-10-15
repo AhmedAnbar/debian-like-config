@@ -53,9 +53,13 @@ const scenario = ({
     stub('apt-get', `case "\${1:-}" in update) exit 0 ;; esac
 for a in "$@"; do [ "$a" = install ] && exit ${installStatus}; done
 exit 0`);
+    // The version table is part of the stub because add_vendor_repo checks where the
+    // candidate comes from, not just that there is one: apt reports a candidate for any
+    // installed package out of /var/lib/dpkg/status with no repository at all.
     stub('apt-cache', candidate
-        ? `printf '  Installed: (none)\\n  Candidate: ${candidate}\\n'`
-        : "printf '  Installed: (none)\\n  Candidate: (none)\\n'");
+        ? `printf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'
+printf '     ${candidate} 500\\n        500 https://dbeaver.io/debs/dbeaver-ce  Packages\\n'`
+        : "printf '  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n'");
     stub('dpkg-query', installed
         ? `printf '${installed}\\n'`
         : 'exit 1');

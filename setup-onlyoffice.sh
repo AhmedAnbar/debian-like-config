@@ -6,7 +6,7 @@
 # all, and the snap and the flatpak were both still on 9.4.0 when this was probed
 # (phase 3 recon, 2026-10-15). One repository serves both releases.
 set -Eeuo pipefail
-trap 'printf "ONLYOFFICE setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "ONLYOFFICE setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -40,10 +40,12 @@ preferences="$etc_root/etc/apt/preferences.d/onlyoffice"
 # The recon proved one suite, squeeze, for both releases; the vendor publishes no
 # per-release suite. arch=amd64 is the only architecture the evidence covers.
 sources_line="deb [arch=amd64 signed-by=$keyring] https://download.onlyoffice.com/repo/debian squeeze main"
-# The recon recorded the host, the suite and the candidate, but not the key's own
-# URL, so this is the vendor's documented key path on the host that was proved,
-# and it is overridable rather than hidden: if it 404s, add_vendor_repo removes
-# everything it wrote and this run ends with a named failure, not a broken apt.
+# The recon recorded the host, the suite and the candidate, but not the key's own URL.
+# tests/vendor-container-smoke.js now proves this one: it reads the URL out of this
+# script, fetches it and verifies the repository and its pin against it in both
+# releases. Overridable rather than hidden, because a vendor can move a key -- and if
+# it 404s, add_vendor_repo removes everything it wrote and this run ends with a named
+# failure, not a broken apt.
 key_url=${DEBIAN_SETUP_ONLYOFFICE_KEY_URL:-https://download.onlyoffice.com/GPG-KEY-ONLYOFFICE}
 printf 'ONLYOFFICE Desktop Editors — the vendor apt repository, pinned\n'
 printf 'Copyright (C) 2026 AhmedAnbar. GPL-3.0-only; no warranty. See LICENSE.\n'

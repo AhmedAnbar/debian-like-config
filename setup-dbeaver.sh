@@ -5,7 +5,7 @@
 # Debian 13 nor Ubuntu 26.04, which is why its map row is a where=none pointer at
 # this script rather than an apt name.
 set -Eeuo pipefail
-trap 'printf "DBeaver setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "DBeaver setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -37,10 +37,12 @@ map=${DEBIAN_SETUP_MAP:-$bundle_dir/packages/apt-map.tsv}
 repo_id=dbeaver
 repo_package=dbeaver-ce
 repo_line="deb [signed-by=$etc_root/etc/apt/keyrings/$repo_id.gpg] https://dbeaver.io/debs/dbeaver-ce /"
-# Overridable because this URL is the one fact about this subject the container
-# evidence did not record: it proved the repository, the candidate and the package,
-# not the path the armoured key is served from. A wrong URL here is a failed fetch,
-# which add_vendor_repo answers by changing nothing at all.
+# This URL was not in the recon, which proved the repository, the candidate and the
+# package but not the path the armoured key is served from. It is now proved in its own
+# right: tests/vendor-container-smoke.js fetches it from this script, dearmors it and
+# verifies the repository against it in both releases. Still overridable, because a
+# vendor can move a key between then and whenever this runs -- and a wrong URL is a
+# failed fetch, which add_vendor_repo answers by changing nothing at all.
 repo_key=${DEBIAN_SETUP_DBEAVER_KEY:-https://dbeaver.io/debs/dbeaver.gpg.key}
 printf 'DBeaver CE setup — the vendor apt repository at dbeaver.io\n'
 printf 'Copyright (C) 2026 AhmedAnbar. GPL-3.0-only; no warranty. See LICENSE.\n'
@@ -54,7 +56,13 @@ printf 'It carried %s 26.2.2 on 2026-10-15; the repository may well have moved o
 map_group_packages "$map" "$repo_id" "$release" dbeaver_packages
 if (( ${#unavailable[@]} )); then printf '\nNot in either archive: %s\n' "${unavailable[*]}"; fi
 if (( ${#skipped[@]} )); then printf 'Skipped on %s: %s\n' "$family" "${skipped[*]}"; fi
-installed=$(dpkg-query -W -f='${Version}' "$repo_package" 2>/dev/null || true)
+# command -v first, as setup-chrome.sh does: || true hides the failure's status but not
+# its "command not found" on stderr, and a missing dpkg-query is not an error worth
+# printing on a machine this script is about to tell about apt anyway.
+installed=''
+if command -v dpkg-query >/dev/null; then
+    installed=$(dpkg-query -W -f='${Version}' "$repo_package" 2>/dev/null || true)
+fi
 if [[ -n "$installed" ]]; then
     printf '\n%s %s is already installed. Adding the repository makes it an ordinary\n' \
         "$repo_package" "$installed"

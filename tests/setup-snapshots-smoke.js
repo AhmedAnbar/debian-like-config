@@ -15,7 +15,8 @@ const script = path.join(root, 'setup-snapshots.sh');
 // The minimalPath() trick from tests/setup-sway-smoke.js: a PATH built from a named
 // list, so the test and not this machine decides what exists. btrbk and snapper are
 // absent here, and anything the script can reach is a stub that only writes a log.
-const sandbox = ({fstype = 'btrfs', apt = 0, findmnt = true, release = 'debian'} = {}) => {
+const sandbox = ({fstype = 'btrfs', apt = 0, findmnt = true, volumeMounted = true,
+    release = 'debian'} = {}) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'snapshots-smoke-'));
     const bin = path.join(home, 'bin');
     fs.mkdirSync(bin);
@@ -31,7 +32,12 @@ const sandbox = ({fstype = 'btrfs', apt = 0, findmnt = true, release = 'debian'}
     const stub = (name, body) =>
         fs.writeFileSync(path.join(bin, name), `#!/bin/sh\necho "${name} $*" >> ${log}\n${body}\n`,
             {mode: 0o755});
-    if (findmnt) stub('findmnt', fstype ? `printf '%s\\n' ${fstype}` : 'exit 0');
+    // findmnt answers per path, so the stub does too: with volumeMounted false, / is
+    // btrfs and the volume directory is a plain directory nothing is mounted on.
+    const findmntBody = !fstype ? 'exit 0'
+        : volumeMounted ? `printf '%s\\n' ${fstype}`
+            : `for last; do :; done\n[ "$last" = / ] && printf '%s\\n' ${fstype}\nexit 0`;
+    if (findmnt) stub('findmnt', findmntBody);
     stub('apt-get', `exit ${apt}`);
     stub('snapper', 'exit 0');
     stub('systemctl', 'exit 0');
@@ -200,6 +206,26 @@ const sandbox = ({fstype = 'btrfs', apt = 0, findmnt = true, release = 'debian'}
         assert.doesNotMatch(calls, new RegExp(`^${name} `, 'm'),
             `${name} was called: this subject is pure apt and must never reach the network`);
     }
+    s.clean();
+}
+
+// A directory is not a mount. /mnt/btrfs-root can exist as an empty placeholder on the
+// btrfs root with nothing mounted on it, and btrfs subvolume create succeeds inside it
+// -- which leaves btrbk snapshotting a path that is not the top-level subvolume, with
+// every command having reported success. What findmnt says about that directory is the
+// question; whether the directory exists is not.
+{
+    const s = sandbox({volumeMounted: false});
+    const result = s.run([], 'y\n'.repeat(40));
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(s.calls(), new RegExp(`findmnt -no FSTYPE -- ${s.pool}`),
+        'The volume directory is asked about by name, not inferred from the root');
+    assert.doesNotMatch(s.calls(), /btrfs subvolume create/,
+        'Nothing is created inside a placeholder that is not the mounted volume');
+    assert.match(result.stdout, /exists but nothing is mounted there/,
+        'And the reason says so, rather than reporting a success');
+    assert.match(result.stdout, new RegExp(`sudo btrfs subvolume create ${s.pool}/snaps`),
+        'With the command to run once the volume really is mounted');
     s.clean();
 }
 

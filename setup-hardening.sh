@@ -9,7 +9,7 @@
 # touches /etc/ssh. What ports is its discipline -- a drop-in instead of an edit to the
 # main file, and a staged file validated before it is installed.
 set -Eeuo pipefail
-trap 'printf "SSH hardening stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "SSH hardening stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -81,6 +81,10 @@ if (( ${#hardening_packages[@]} )); then
     # Ubuntu's own packages in this phase live in universe, and apt-get must not take the
     # rest of the run down with it either way.
     if ask "Install ${hardening_packages[*]} and start the listening SSH service?"; then
+        # The update first, as every other script here does: on a machine whose lists are
+        # stale or absent -- a fresh install, or one where nothing has run apt yet -- the
+        # install fails for a reason the message below does not cover.
+        attempt sudo apt-get update
         attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${hardening_packages[@]}"
     fi
 else
@@ -94,6 +98,25 @@ printf '  KbdInteractiveAuthentication no without it PAM still offers a password
 printf '                                  PasswordAuthentication no alone is not enough\n'
 printf '  X11Forwarding no                this is a desktop, not a jump host\n'
 printf 'Deleting that one file and restarting %s undoes every line of it.\n' "$unit"
+# sshd uses the FIRST value it obtains for each keyword, and both releases' sshd_config
+# includes sshd_config.d/*.conf near the top, so among drop-ins the lowest-numbered file
+# wins. A 50-cloud-init.conf saying "PasswordAuthentication yes" therefore beats this
+# file -- verified in a debian:trixie container -- which is why they are named here and
+# the effective configuration is read back after the install.
+shopt -s nullglob
+other_dropins=("$etc_root"/etc/ssh/sshd_config.d/*.conf)
+shopt -u nullglob
+other_names=()
+for existing in ${other_dropins[@]+"${other_dropins[@]}"}; do
+    [[ "$existing" == "$dropin" ]] || other_names+=("${existing##*/}")
+done
+if (( ${#other_names[@]} )); then
+    printf '\nThis machine already has drop-ins in %s/etc/ssh/sshd_config.d:\n' "$etc_root"
+    printf '  %s\n' "${other_names[@]}"
+    printf 'sshd keeps the first value it finds for each setting, so a lower-numbered file\n'
+    printf 'than 99-hardening.conf wins. The effective configuration is read back below, and\n'
+    printf 'this run reports any setting that did not take.\n'
+fi
 if ask "Stage, validate and install $dropin?"; then
     want_no_password=false
     key_count=0
@@ -154,6 +177,31 @@ if ask "Stage, validate and install $dropin?"; then
             if try sudo "$sshd_bin" -t -f "$stage/99-hardening.conf"; then
                 if try sudo install -Dm644 -- "$stage/99-hardening.conf" "$dropin"; then
                     hardened=true
+                    # What sshd will actually do, not what this file asks for. A setting
+                    # another drop-in already decided is reported, because telling someone
+                    # their machine no longer accepts passwords when it does is the worst
+                    # outcome this script has available.
+                    effective=$(sudo "$sshd_bin" -T 2>/dev/null || true)
+                    if [[ -n "$effective" ]]; then
+                        printf '\nWhat sshd reports as effective now:\n'
+                        while IFS= read -r setting; do
+                            printf '  %s\n' "$setting"
+                        done < <(printf '%s\n' "$effective" | grep -E \
+                            '^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication|x11forwarding) ' \
+                            || true)
+                        if "$want_no_password" \
+                            && printf '%s\n' "$effective" | grep -qx 'passwordauthentication yes'; then
+                            printf 'PasswordAuthentication no did not take effect: this machine still accepts\n' >&2
+                            printf 'passwords. Another drop-in sets it first, and sshd keeps the first value.\n' >&2
+                            if (( ${#other_names[@]} )); then
+                                printf 'Look at: %s\n' "${other_names[*]}" >&2
+                            fi
+                            failed+=('PasswordAuthentication no did not take effect')
+                        fi
+                    else
+                        printf 'sshd -T reported nothing, so this run could not confirm what took effect.\n' >&2
+                        skipped+=('the read-back of the effective sshd configuration')
+                    fi
                 fi
             else
                 printf 'sshd -t rejected the staged file, so nothing was installed and sshd is unchanged.\n' >&2

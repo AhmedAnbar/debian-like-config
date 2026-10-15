@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Report, or pull back, configuration that has drifted from arch-desktop-setup.
 set -Eeuo pipefail
-trap 'printf "Stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 mode=check
 case "${1:-}" in

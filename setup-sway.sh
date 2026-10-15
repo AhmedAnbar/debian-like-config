@@ -4,7 +4,7 @@
 # Optional Sway/Wayland session. The i3 desktop install.sh sets up stays installed
 # and unchanged: nothing here removes or edits an i3, Picom or Flameshot setting.
 set -Eeuo pipefail
-trap 'printf "Setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in

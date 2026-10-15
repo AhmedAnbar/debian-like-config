@@ -319,6 +319,25 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.rmSync(home, {recursive: true, force: true});
 }
 
+// A run that stops between installing the EXIT trap and the end must still print a
+// usable summary. The trap names the delegates that were not run, so that array has to
+// exist before the trap does -- otherwise an unreadable map dies inside the trap itself
+// under set -u, and the unbound variable is the last thing the user sees instead of the
+// reason the run stopped.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-earlyexit-smoke-'));
+    const result = spawnSync('bash', [path.join(root, 'install.sh'), '--dry-run'], {
+        encoding: 'utf8', timeout: 30000, input: 'n\n'.repeat(10),
+        env: {...env(debian), HOME: home, DEBIAN_SETUP_MAP: path.join(home, 'absent.tsv')},
+    });
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.match(output, /Missing package map/, 'The real cause is named');
+    assert.doesNotMatch(output, /unbound variable/,
+        'And the summary must not fail in the middle of explaining it');
+    assert.match(output, /Backups, when needed:/, 'The summary is complete');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
 // A fatal failure must point at the line that ran the command, not at run()'s own
 // body. install.sh's only unguarded fatal run is now inside an if condition, where
 // bash exempts the failure from the ERR trap, so the property is pinned directly:
@@ -347,6 +366,33 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.rmSync(errHome, {recursive: true, force: true});
 }
 
+// And a failure at the top level, where there is no run() between the command and the
+// trap, must name its own line too. ${BASH_LINENO[0]} is the string "0" there, not
+// empty, so a :-$LINENO default never substitutes and every one of these scripts used
+// to report "stopped at line 0" for exactly the failures a user most needs to locate:
+// bare command substitutions like machine=$(uname -m).
+{
+    const errHome = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-errline-top-'));
+    const trap = fs.readFileSync(path.join(root, 'install.sh'), 'utf8')
+        .split('\n').find((line) => line.startsWith('trap ') && line.includes('ERR'));
+    const probe = [
+        'set -Eeuo pipefail',
+        trap,
+        'printf "before\\n"',
+        'value=$(false)',       // line 4: a bare command substitution, no run() involved
+        'printf "after\\n"',
+    ].join('\n');
+    const script = path.join(errHome, 'probe.sh');
+    fs.writeFileSync(script, probe + '\n');
+    const result = spawnSync('bash', [script], {encoding: 'utf8', timeout: 20000,
+        env: {...process.env, HOME: errHome}});
+    assert.notEqual(result.status, 0, 'The failure is still fatal');
+    const reported = [...new Set([...result.stderr.matchAll(/line (\d+)/g)].map((m) => Number(m[1])))];
+    assert.deepEqual(reported, [4],
+        `A top-level failure must name its own line, never 0, got ${reported}`);
+    fs.rmSync(errHome, {recursive: true, force: true});
+}
+
 // A group this installer does not own is not installed here -- but it is not dropped
 // in silence either. Phase 1 asserted that every map group is offered, which was the
 // old mechanism talking; what matters to a user is that nothing in the map vanishes
@@ -369,16 +415,28 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
         assert.match(result.stdout, new RegExp(`Installed by their own scripts[^\n]*\\b${owned}\\b`),
             `${owned} belongs to its own script and must be named there`);
     }
+    // Naming the group is only half the promise: a reader told that editor-tools lives
+    // in its own script, and never told which, is no better off than before.
+    for (const [group, command] of [['editor-tools', 'bash setup-nvim.sh'], ['sway', 'bash setup-sway.sh']]) {
+        assert.ok(result.stdout.includes(command),
+            `${group} is named, but ${command} is never printed, so there is nothing to run`);
+    }
     fs.rmSync(home, {recursive: true, force: true});
 }
 
 // The phase 3 and 4 scripts are offered at the end of the run, each its own question,
 // each declined by default, with --dry-run passed through. The eleven real ones are
-// interactive installers that reach vendor hosts — setup-tor-browser.sh would scp from
-// another machine — so the mechanism is proved against fixture scripts named by
-// DEBIAN_SETUP_DELEGATES, and the default list is checked separately below.
+// interactive installers that reach vendor hosts -- setup-tor-browser.sh would scp from
+// another machine -- so the mechanism is proved against fixture scripts, in a copy of
+// the bundle: install.sh resolves a delegate against its own directory, and a test that
+// wrote fixtures into the repository would leave them there if it were interrupted.
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-delegate-smoke-'));
+    const bundle = path.join(home, 'bundle');
+    fs.mkdirSync(bundle);
+    for (const part of ['install.sh', 'lib', 'packages', 'config', 'applications', 'zsh', 'profiles']) {
+        fs.cpSync(path.join(root, part), path.join(bundle, part), {recursive: true});
+    }
     const stubs = path.join(home, 'bin');
     fs.mkdirSync(stubs);
     const log = path.join(home, 'calls');
@@ -390,68 +448,81 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     fs.writeFileSync(path.join(stubs, 'apt-cache'), '#!/bin/sh\nprintf "  Candidate: 0.11.6-1\\n"\n',
         {mode: 0o755});
-    // Two fixtures in the bundle directory, because that is where install.sh looks for a
-    // delegate: one that records how it was called, one that fails the way a dead vendor
+    // One fixture that records how it was called, one that fails the way a dead vendor
     // host does.
-    const good = path.join(root, 'setup-delegate-fixture-ok.sh');
-    const bad = path.join(root, 'setup-delegate-fixture-fail.sh');
-    fs.writeFileSync(good, `#!/usr/bin/env bash\necho "fixture-ok $*" >> ${log}\nprintf 'fixture ok\\n'\n`,
-        {mode: 0o755});
-    fs.writeFileSync(bad, `#!/usr/bin/env bash\necho "fixture-fail $*" >> ${log}\nexit 1\n`,
-        {mode: 0o755});
-    const delegates = 'setup-delegate-fixture-ok.sh setup-delegate-fixture-fail.sh';
-    const runInstaller = (args, answers) => spawnSync('bash', [path.join(root, 'install.sh'), ...args], {
-        encoding: 'utf8', timeout: 90000, input: answers,
-        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`,
-            DEBIAN_SETUP_DELEGATES: delegates},
-    });
-    try {
-        // A preview names the command with the flag passed through, and runs nothing —
-        // the same contract install.sh has kept for setup-zsh.sh since phase 1.
-        const preview = runInstaller(['--dry-run'], 'y\n'.repeat(120));
-        assert.equal(preview.status, 0, preview.stderr);
-        assert.match(preview.stdout, /bash \S*setup-delegate-fixture-ok\.sh --dry-run/,
-            'A preview names the delegate with --dry-run passed through');
-        assert.match(preview.stdout, /bash \S*setup-delegate-fixture-fail\.sh --dry-run/,
-            'Every delegate is offered, not just the first');
-        assert.equal(fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', '',
-            'And a preview runs none of them');
+    fs.writeFileSync(path.join(bundle, 'setup-ok-fixture.sh'),
+        `#!/usr/bin/env bash\necho "fixture-ok $*" >> ${log}\nprintf 'fixture ok\\n'\n`, {mode: 0o755});
+    fs.writeFileSync(path.join(bundle, 'setup-fail-fixture.sh'),
+        `#!/usr/bin/env bash\necho "fixture-fail $*" >> ${log}\nexit 1\n`, {mode: 0o755});
+    const runInstaller = (args, answers, delegates) => spawnSync('bash',
+        [path.join(bundle, 'install.sh'), ...args], {
+            encoding: 'utf8', timeout: 90000, input: answers,
+            env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`,
+                DEBIAN_SETUP_DELEGATES: delegates},
+        });
+    const fixtures = 'setup-ok-fixture.sh setup-fail-fixture.sh';
 
-        // A real run executes each one, and a failure neither stops the next nor is lost.
-        const real = runInstaller([], 'y\n'.repeat(120));
-        const calls = fs.readFileSync(log, 'utf8');
-        assert.match(calls, /^fixture-ok $/m, 'A real run executes the delegate, with no flag');
-        assert.match(calls, /^fixture-fail $/m,
-            'And keeps going after one fails, because they are independent of each other');
-        assert.match(real.stdout, /Steps that failed:[\s\S]*setup-delegate-fixture-fail\.sh/,
-            'The delegate that failed is named in the summary');
-        assert.notEqual(real.status, 0, 'And the run reports failure to whatever called it');
+    // A preview names the command with the flag passed through, and runs nothing --
+    // the same contract install.sh has kept for setup-zsh.sh since phase 1.
+    const preview = runInstaller(['--dry-run'], 'y\n'.repeat(120), fixtures);
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.match(preview.stdout, /bash \S*setup-ok-fixture\.sh --dry-run/,
+        'A preview names the delegate with --dry-run passed through');
+    assert.match(preview.stdout, /bash \S*setup-fail-fixture\.sh --dry-run/,
+        'Every delegate is offered, not just the first');
+    assert.equal(fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', '',
+        'And a preview runs none of them');
 
-        // Declining is free: the summary names the command, so nothing is lost by saying no.
-        const declined = runInstaller(['--dry-run'], 'n\n'.repeat(120));
-        assert.equal(declined.status, 0, 'Declining everything is not a failure');
-        assert.match(declined.stdout, /bash setup-delegate-fixture-ok\.sh/,
-            'A declined delegate is named with the command that runs it later');
-    } finally {
-        fs.rmSync(good, {force: true});
-        fs.rmSync(bad, {force: true});
-        fs.rmSync(home, {recursive: true, force: true});
-    }
+    // A real run executes each one, and a failure neither stops the next nor is lost.
+    const real = runInstaller([], 'y\n'.repeat(120), fixtures);
+    const calls = fs.readFileSync(log, 'utf8');
+    assert.match(calls, /^fixture-ok $/m, 'A real run executes the delegate, with no flag');
+    assert.match(calls, /^fixture-fail $/m,
+        'And keeps going after one fails, because they are independent of each other');
+    assert.match(real.stdout, /Steps that failed:[\s\S]*setup-fail-fixture\.sh/,
+        'The delegate that failed is named in the summary');
+    assert.notEqual(real.status, 0, 'And the run reports failure to whatever called it');
+
+    // Declining is free: the summary names the command, so nothing is lost by saying no.
+    const declined = runInstaller(['--dry-run'], 'n\n'.repeat(120), fixtures);
+    assert.equal(declined.status, 0, 'Declining everything is not a failure');
+    assert.match(declined.stdout, /bash setup-ok-fixture\.sh/,
+        'A declined delegate is named with the command that runs it later');
+
+    // A delegate that is not in the bundle is reported, never silently skipped.
+    const missing = runInstaller(['--dry-run'], 'y\n'.repeat(120), 'setup-not-here.sh');
+    assert.match(missing.stdout + missing.stderr, /setup-not-here\.sh/,
+        'A delegate that cannot be found is named');
+
+    // An explicitly empty list offers nothing and says nothing about optional scripts,
+    // rather than printing a heading with no questions under it.
+    const none = runInstaller(['--dry-run'], 'n\n'.repeat(120), '');
+    assert.equal(none.status, 0);
+    assert.doesNotMatch(none.stdout, /These install one application or system feature each/,
+        'An empty delegate list prints no heading');
+
+    fs.rmSync(home, {recursive: true, force: true});
 }
 
-// The default list is every phase 3 and 4 script in the bundle, so a user who only ever
-// runs install.sh is asked about all of them.
+// The default list is the eleven real scripts, in order, with hardening last. Read from
+// the default expansion itself, not from the file as a whole: every one of these names
+// also appears in the prompt table, so a substring search over install.sh would stay
+// green if a name were dropped from the list that actually runs.
 {
     const body = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
-    for (const script of ['setup-chrome.sh', 'setup-dbeaver.sh', 'setup-onlyoffice.sh',
-        'setup-dropbox.sh', 'setup-docker.sh', 'setup-postman.sh', 'setup-tor-browser.sh',
-        'setup-conky.sh', 'setup-zram.sh', 'setup-snapshots.sh', 'setup-hardening.sh']) {
-        assert.ok(body.includes(script), `install.sh must offer ${script}`);
+    const expansion = body.match(/\$\{DEBIAN_SETUP_DELEGATES-([\s\S]*?)\}/);
+    assert.ok(expansion, 'install.sh must carry a default delegate list');
+    const defaults = expansion[1].replace(/\\\n/g, ' ').trim().split(/\s+/);
+    assert.deepEqual(defaults, [
+        'setup-chrome.sh', 'setup-dbeaver.sh', 'setup-onlyoffice.sh', 'setup-dropbox.sh',
+        'setup-docker.sh', 'setup-postman.sh', 'setup-tor-browser.sh', 'setup-conky.sh',
+        'setup-zram.sh', 'setup-snapshots.sh', 'setup-hardening.sh',
+    ], 'Every phase 3 and 4 script is offered, and SSH hardening is offered last');
+    for (const script of defaults) {
         assert.ok(fs.existsSync(path.join(root, script)), `${script} must exist to be offered`);
+        assert.ok(new RegExp(`\\[${script.replace('.', '\\.')}\\]=`).test(body),
+            `${script} must have a prompt of its own, not the generic fallback`);
     }
-    // Last, because it is the only one that can lock the user out of their own machine.
-    assert.ok(body.lastIndexOf('setup-hardening.sh') > body.lastIndexOf('setup-chrome.sh'),
-        'SSH hardening is offered last');
 }
 
 // Ubuntu's firefox package installs a snap from its postinst: it must not be able to

@@ -54,7 +54,9 @@ const scenario = ({release = 'debian', answers = 'y\n'.repeat(12), args = [], ke
             : `echo "curl $*" >> ${log}\nexit 22`,
         gpg: `echo "gpg $*" >> ${log}\nout=''\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out=$2; shift; done\n[ -n "$out" ] && printf 'DEARMORED\\n' > "$out"\nexit 0`,
         'apt-get': `echo "apt-get $*" >> ${log}\nexit ${update}`,
-        'apt-cache': `echo "apt-cache $*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: ${candidate || '(none)'}\\n'`,
+        // The version table is part of the stub because add_vendor_repo checks where the
+        // candidate comes from, not just that there is one.
+        'apt-cache': `echo "apt-cache $*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: ${candidate || '(none)'}\\n  Version table:\\n'${candidate ? `\nprintf '     ${candidate} 500\\n        500 https://dl.google.com/linux/chrome/deb stable/main amd64 Packages\\n'` : ''}`,
         // Chrome needs no unit, and a test must never touch the real init system.
         systemctl: `echo "systemctl $*" >> ${log}\nexit 0`,
     };

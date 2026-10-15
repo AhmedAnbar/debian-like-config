@@ -9,7 +9,7 @@
 # offered the real chromium with the browser-files group, and on Ubuntu 26.04 there is no
 # chromium package at all. Nothing here installs or removes one.
 set -Eeuo pipefail
-trap 'printf "Chrome setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Chrome setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -91,9 +91,11 @@ summary() {
     # a user who does not expect them reads them as damage.
     printf 'Chrome maintains its own apt configuration whatever this script does. Its postinst\n'
     printf 'writes /etc/apt/sources.list.d/google-chrome.list and /usr/share/keyrings/google-chrome.gpg,\n'
-    printf 'and /etc/cron.daily/google-chrome checks that configuration every day. So apt may\n'
-    printf 'show this repository twice — once from Google file, once from the one added here —\n'
-    printf 'and a sources file deleted by hand comes back while the package is installed.\n'
+    printf 'and /etc/cron.daily/google-chrome checks that configuration every day. It writes\n'
+    printf 'the same sources path this script does, so the two do not stack up as duplicate\n'
+    printf 'apt entries: the later write simply wins, and it points at Chrome own keyring\n'
+    printf 'under /usr/share/keyrings, leaving the one under /etc/apt/keyrings unreferenced.\n'
+    printf 'A sources file deleted by hand also comes back while the package is installed.\n'
     printf 'Removing google-chrome-stable is what ends both; nothing here tries to.\n'
     printf 'chromium is untouched on both releases: this script never installs or removes it.\n'
     printf 'Not verified by this repository, in a container or here: that Chrome launches on\n'

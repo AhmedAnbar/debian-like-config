@@ -28,7 +28,7 @@ const minimalPath = (log, {candidate = '1.22.1-1', installStatus = 0, updateStat
     // bash and sh are in the list because spawnSync resolves the command it runs
     // through the PATH it is given, not the one this process has.
     for (const command of ['bash', 'sh', 'cat', 'chmod', 'cmp', 'cp', 'date', 'dirname', 'env',
-        'find', 'id', 'install', 'mkdir', 'mktemp', 'sort', 'stat', 'tail', 'unlink', 'awk',
+        'find', 'grep', 'id', 'install', 'mkdir', 'mktemp', 'sort', 'stat', 'tail', 'unlink', 'awk',
         ...extra]) {
         const source = ['/usr/bin', '/bin', '/usr/sbin'].map((d) => path.join(d, command))
             .find((candidatePath) => fs.existsSync(candidatePath));
@@ -55,10 +55,15 @@ esac`);
 };
 const read = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
 // One case: its own home, its own PATH, its own call log.
-const run = (args, release, {answers = 'n\n'.repeat(40), label = 'case', ...options} = {}) => {
+const run = (args, release, {answers = 'n\n'.repeat(40), label = 'case', i3Config = null,
+    ...options} = {}) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), `conky-${label}-`));
     const log = path.join(home, 'calls');
     const only = minimalPath(log, options);
+    if (i3Config !== null) {
+        fs.mkdirSync(path.join(home, '.config/i3'), {recursive: true});
+        fs.writeFileSync(path.join(home, '.config/i3/config'), i3Config);
+    }
     const result = spawnSync('bash', [path.join(root, 'setup-conky.sh'), ...args], {
         encoding: 'utf8', timeout: 60000, input: answers,
         env: {HOME: home, PATH: only, DEBIAN_SETUP_OS_RELEASE: release},
@@ -179,8 +184,9 @@ const mode = (file) => fs.statSync(file).mode & 0o777;
             assert.equal(mode(target), 0o755, `${script} must be executable`);
         }
     }
-    // The i3 configuration is a shared file this script must not rewrite, so the run
-    // has to say what to add and where, or the i3 session silently has no panel.
+    // The i3 configuration is a shared file this script must not rewrite, so when the
+    // lines are absent the run has to say what to add and where, or the i3 session
+    // silently has no panel.
     assert.match(all.result.stdout, /\.config\/i3\/config/, 'Say which file to edit by hand');
     assert.match(all.result.stdout, /exec --no-startup-id sh ~\/\.config\/conky\/start\.sh/,
         'And print the exact line to add');
@@ -250,6 +256,54 @@ const mode = (file) => fs.statSync(file).mode & 0o777;
         assert.doesNotMatch(read(path.join(root, file)), /pacman/,
             `${file} must not tell a Debian user to run pacman`);
     }
+}
+
+// The i3 configuration this repository installs already carries the two lines, so for
+// anyone who ran install.sh the paste instruction is not just redundant, it is harmful:
+// two exec lines both race through start.sh, each finds no pid file, each starts a
+// conky, and the second overwrites the pid file -- two panels, one of them beyond the
+// reach of switch.sh off.
+{
+    const installed = fs.readFileSync(path.join(root, 'config/i3/config'), 'utf8');
+    const s = run([], debian, {label: 'i3-present', answers: 'y\n'.repeat(40), i3Config: installed});
+    assert.equal(s.result.status, 0, s.result.stderr);
+    assert.match(s.result.stdout, /already/,
+        'Say that the lines are already there rather than asking for them again');
+    assert.doesNotMatch(s.result.stdout, /Add them to/,
+        'And do not tell the user to add lines their configuration already has');
+    assert.ok(!fs.existsSync(s.config('conky/i3-conky.conf')),
+        'The paste file is pointless when nothing needs pasting, so it is not offered');
+    s.clean();
+}
+
+// A user whose i3 configuration is their own still gets the lines and the paste file.
+{
+    const s = run([], debian, {label: 'i3-absent', answers: 'y\n'.repeat(40),
+        i3Config: '# my own i3 config\nexec --no-startup-id nm-applet\n'});
+    assert.equal(s.result.status, 0, s.result.stderr);
+    assert.match(s.result.stdout, /exec --no-startup-id sh ~\/\.config\/conky\/start\.sh/,
+        'The lines are printed for a configuration that does not have them');
+    assert.match(s.result.stdout, /Add them to/, 'With where to put them');
+    assert.ok(fs.existsSync(s.config('conky/i3-conky.conf')), 'And the paste file is offered');
+    s.clean();
+}
+
+// Stdin that runs out mid-run takes defaults rather than aborting. Answering yes to
+// the theme question and then closing stdin used to kill the script under set -e, which
+// skipped the Sway and i3 steps -- the two that matter more than a colour.
+{
+    // Exactly three answers: the package install, the configuration, and yes to the
+    // theme question -- so stdin is empty at the "Theme [1]:" read itself.
+    const s = run([], debian, {label: 'eof', answers: 'y\ny\ny\n'});
+    // The menu, not the read's own prompt: bash prints a read -p prompt only when stdin
+    // is a terminal, and this one is a pipe. Seeing the menu is what proves the theme
+    // question was reached and accepted, so the empty read below is the real thing.
+    assert.match(s.result.stdout, /1\) Catppuccin/, 'The run reaches the theme question');
+    assert.equal(s.result.status, 0, `A closed stdin is not an error:\n${s.result.stderr}`);
+    assert.doesNotMatch(s.result.stderr, /stopped at line/, 'And must not abort the run');
+    assert.equal(read(s.config('conky/theme')).trim(), 'catppuccin',
+        'An answer that never arrives takes the default rather than killing the run');
+    s.clean();
 }
 
 fs.rmSync(scratch, {recursive: true, force: true});

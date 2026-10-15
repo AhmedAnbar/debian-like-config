@@ -11,7 +11,8 @@ const root = path.resolve(__dirname, '..');
 
 // A real PGP key would need gpg and a keyring; the stub dearmors by copying, which
 // is all the helper's ordering contract depends on.
-const scenario = ({key = 'ok', candidate = '26.2.2', update = 0, pin = ''} = {}) => {
+const scenario = ({key = 'ok', candidate = '26.2.2', update = 0, pin = '',
+    origin = 'https://example.invalid/debs/dbeaver-ce  Packages'} = {}) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'vendor-repo-'));
     const bin = path.join(home, 'bin');
     fs.mkdirSync(bin);
@@ -25,9 +26,17 @@ const scenario = ({key = 'ok', candidate = '26.2.2', update = 0, pin = ''} = {})
         ? `#!/bin/sh\necho "gpg $*" >> ${log}\nexit 2\n`
         : `#!/bin/sh\necho "gpg $*" >> ${log}\nout=''\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out=$2; shift; done\n[ -n "$out" ] && printf 'DEARMORED\\n' > "$out"\nexit 0\n`, {mode: 0o755});
     fs.writeFileSync(path.join(bin, 'apt-get'), `#!/bin/sh\necho "apt-get $*" >> ${log}\nexit ${update}\n`, {mode: 0o755});
+    // The real shape of apt-cache policy output, because where the candidate comes from
+    // is the whole question: apt reports a candidate for any installed package out of
+    // /var/lib/dpkg/status, with no repository configured at all.
     fs.writeFileSync(path.join(bin, 'apt-cache'), candidate
-        ? `#!/bin/sh\necho "apt-cache $*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: ${candidate}\\n'\n`
-        : `#!/bin/sh\necho "apt-cache $*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: (none)\\n'\n`, {mode: 0o755});
+        ? `#!/bin/sh
+echo "apt-cache $*" >> ${log}
+printf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'
+printf '     ${candidate} 500\\n        500 ${origin}\\n'
+`
+        : `#!/bin/sh\necho "apt-cache $*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n'\n`,
+        {mode: 0o755});
     const probe = `
         dry_run=false; target_config=$HOME/.config; backup_dir=$HOME/backup
         source ${path.join(root, 'lib/common.sh')}
@@ -111,6 +120,56 @@ const scenario = ({key = 'ok', candidate = '26.2.2', update = 0, pin = ''} = {})
     assert.match(result.stdout, /example\.invalid/, 'A preview names the key and the sources line');
     assert.ok(!fs.existsSync(aptRoot), 'A preview creates nothing');
     fs.rmSync(home, {recursive: true, force: true});
+}
+
+// A re-run is the case the old gate could not see. apt reports a candidate for any
+// INSTALLED package straight out of /var/lib/dpkg/status, with no repository at all
+// (verified in a debian:trixie container: jq, every source file removed and the lists
+// wiped, still reports "Candidate: 1.7.1-6+deb13u4" at priority 100). So on the second
+// run of any of these scripts the package is already installed and a numeric candidate
+// proves nothing. What must be proved is that the candidate comes from THIS repository.
+{
+    const s = scenario({origin: '/var/lib/dpkg/status'});
+    assert.doesNotMatch(s.result.stdout, /returned 0/,
+        'A candidate that comes from dpkg rather than this repository is not success');
+    assert.ok(!fs.existsSync(s.sources),
+        'And the sources file this run wrote must come off again');
+    assert.ok(!fs.existsSync(s.keyring), 'With its keyring');
+    assert.match(s.result.stdout, /failed: .*dbeaver/, 'The failure is recorded');
+    fs.rmSync(s.home, {recursive: true, force: true});
+}
+
+// Nor may the candidate come from some other repository that happens to carry the name.
+{
+    const s = scenario({origin: 'http://deb.debian.org/debian trixie/main amd64 Packages'});
+    assert.doesNotMatch(s.result.stdout, /returned 0/,
+        "Another repository's package is not proof that this one works");
+    assert.ok(!fs.existsSync(s.sources), 'The sources file comes off again');
+    fs.rmSync(s.home, {recursive: true, force: true});
+}
+
+// A non-zero apt-get update means the file this run just wrote is broken: a 404 suite
+// or an unreadable keyring exits 100 (proved in a container), while an unreachable host
+// exits 0. So the exit status is not sufficient -- which is what the recon said -- but
+// it is necessary, and ignoring it leaves a sources file that fails every later update.
+{
+    const s = scenario({update: 100});
+    assert.doesNotMatch(s.result.stdout, /returned 0/,
+        'An update that failed is a failure, whatever the candidate says');
+    assert.ok(!fs.existsSync(s.sources),
+        'A sources file that breaks apt must not survive the run that wrote it');
+    assert.ok(!fs.existsSync(s.keyring), 'With its keyring');
+    assert.match(s.result.stdout + s.result.stderr, /update/i, 'Say what went wrong');
+    fs.rmSync(s.home, {recursive: true, force: true});
+}
+
+// The update is scoped to the file this run wrote, so a third-party repository that was
+// already broken before this script ran cannot be mistaken for this one failing.
+{
+    const s = scenario();
+    assert.match(s.log, /apt-get update[^\n]*Dir::Etc::sourcelist=[^\n]*dbeaver\.list/,
+        'The update names this repository alone');
+    fs.rmSync(s.home, {recursive: true, force: true});
 }
 
 console.log('vendor-repo-smoke: all checks passed');

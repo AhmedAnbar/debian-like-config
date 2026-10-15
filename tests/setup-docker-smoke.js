@@ -88,9 +88,12 @@ exit 0
     fs.writeFileSync(path.join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     // Read-only probes do not log: that is what lets an untouched machine be proved
     // by an empty log rather than by a list of lines that are allowed to be there.
+    // The version table is part of the stub because add_vendor_repo checks where the
+    // candidate comes from, not just that there is one: apt reports a candidate for any
+    // installed package out of /var/lib/dpkg/status with no repository at all.
     fs.writeFileSync(path.join(bin, 'apt-cache'), candidate
-        ? `#!/bin/sh\nprintf '  Installed: (none)\\n  Candidate: ${candidate}\\n'\n`
-        : '#!/bin/sh\nprintf \'  Installed: (none)\\n  Candidate: (none)\\n\'\n', {mode: 0o755});
+        ? `#!/bin/sh\nprintf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'\nprintf '     ${candidate} 500\\n        500 https://download.docker.com/linux/debian trixie/stable amd64 Packages\\n'\n`
+        : '#!/bin/sh\nprintf \'  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n\'\n', {mode: 0o755});
     if (dpkg) {
         fs.writeFileSync(path.join(bin, 'dpkg'), '#!/bin/sh\nprintf \'amd64\\n\'\n', {mode: 0o755});
     }

@@ -72,11 +72,20 @@ const zram = ({args = [], answers = 'n', release = debian, mem = laptop, apt = 0
     stubs(bin, log, {apt, systemctl});
     const aptRoot = path.join(home, 'root');
     const conf = path.join(aptRoot, 'etc/systemd/zram-generator.conf');
-    // The file the package ships, which is the whole reason this script is small:
-    // an active [zram0] already exists before anything here runs.
+    // The file the package ships, which is the whole reason this script is small: an
+    // active [zram0] already exists before anything here runs. Its real content, verified
+    // in both release containers on 2026-10-15, is the section header and no keys at all
+    // -- min(ram / 2, 4096) and the kernel's default compressor are the generator's own
+    // defaults, described in that file's comments rather than written as options. A
+    // fixture that invented keys here would suggest this script discards them.
     const shipped = path.join(aptRoot, 'usr/lib/systemd/zram-generator.conf');
     fs.mkdirSync(path.dirname(shipped), {recursive: true});
-    fs.writeFileSync(shipped, '[zram0]\nzram-size = min(ram / 2, 4096)\ncompression-algorithm = zstd lz4 (type=huge)\n');
+    fs.writeFileSync(shipped, `# This config file enables a /dev/zram0 swap device with the following
+# properties:
+# * size: 50% of available RAM or 4GiB, whichever is less
+# * compression-algorithm: kernel default
+[zram0]
+`);
     if (seed !== null) {
         fs.mkdirSync(path.dirname(conf), {recursive: true});
         fs.writeFileSync(conf, seed);
@@ -209,13 +218,19 @@ const noNetwork = (calls) => {
 
 // An existing file is backed up before it is replaced.
 {
-    const seeded = zram({answers: 'y', seed: '[zram0]\nzram-size = 1024\n'});
+    // The seed carries a key the replacement does not, because those keys are the one
+    // thing a user can lose here: the file is replaced whole, not merged, so the backup
+    // is what makes the undo in the summary true rather than a promise.
+    const seeded = zram({answers: 'y',
+        seed: '[zram0]\nzram-size = 1024\ncompression-algorithm = lzo-rle\n'});
     assert.equal(seeded.result.status, 0, seeded.result.stderr);
     assert.match(seeded.written, /zram-size = 8192/, 'The new value lands');
     assert.equal(seeded.backups.length, 1, 'The replaced file is backed up exactly once');
     const backup = path.join(seeded.state, seeded.backups[0], 'zram-generator.conf');
     assert.ok(fs.existsSync(backup), `The backup is readable: ${backup}`);
     assert.match(fs.readFileSync(backup, 'utf8'), /zram-size = 1024/, 'And it is the old file');
+    assert.match(fs.readFileSync(backup, 'utf8'), /compression-algorithm = lzo-rle/,
+        'Including the keys the replacement does not carry');
     assert.match(seeded.result.stdout, /zram-size = 1024/, 'Show what is there before replacing it');
     seeded.clean();
 }

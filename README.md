@@ -240,14 +240,18 @@ so when they have been.
 
 ## Third-party applications
 
-Five applications that neither release packages, each its own script, each asked
-about at the end of `install.sh` and declined by default. Every one of them adds a
-vendor apt repository the same way: the signing key is fetched **before** any
+Six applications that neither release packages properly, each its own script, each
+asked about at the end of `install.sh` and declined by default. Five of them add a
+vendor apt repository; Postman is a tarball into `/opt`, because Postman is published
+no other way. The five repositories are all added the same way: the signing key is fetched **before** any
 sources file is written, the repository gets its own `apt-get update`, and the
-verdict is whether `apt-cache policy` then offers a numeric candidate — not the
-exit status, because `apt-get update` exits 0 when a vendor host is unreachable. A
-repository that cannot be verified is removed again, key and pin included, so a
-vendor outage leaves the machine exactly as it was.
+verdict is both that the update succeeded and that `apt-cache policy` then offers the
+package **from that vendor's own host**. Neither test alone is enough: `apt-get update`
+exits 0 when a vendor host is unreachable, and apt reports a candidate for any already
+installed package straight out of `/var/lib/dpkg/status` — so on a second run a bare
+candidate check would pass no matter what happened. A repository that cannot be verified
+is removed again, key and pin included, so a vendor outage leaves the machine exactly as
+it was.
 
 ```bash
 bash setup-chrome.sh        # google-chrome-stable, from dl.google.com
@@ -255,7 +259,7 @@ bash setup-dbeaver.sh       # dbeaver-ce, from dbeaver.io's flat repository
 bash setup-onlyoffice.sh    # onlyoffice-desktopeditors, a 279 MB download
 bash setup-dropbox.sh       # the Dropbox frontend, from linux.dropbox.com
 bash setup-docker.sh        # Docker Engine, compose, the docker group, lazydocker
-bash setup-postman.sh       # Postman, from the vendor tarball, into /opt
+bash setup-postman.sh       # Postman, from the vendor tarball, into /opt (no repository)
 ```
 
 Each takes `--dry-run`, which shows every step and writes nothing.
@@ -327,12 +331,20 @@ bash setup-hardening.sh     # SSH, last and loudest
   a machine that never ran this script.
 - **zram** only ever raises a cap: `systemd-zram-generator` already ships an active
   default of `min(ram / 2, 4096)` MB, so the script writes
-  `/etc/systemd/zram-generator.conf` with `min(ram / 2, 8192)` and nothing else.
+  `/etc/systemd/zram-generator.conf` with `zram-size` set to `min(ram / 2, 8192)`
+  **worked out now, as a plain number**: an expression the generator cannot parse makes
+  it exit 1 and leaves the machine with no zram at all, so the figure is frozen at the
+  amount of RAM this machine has when you run it.
   When half this machine's RAM is already under the shipped cap it writes nothing
   and says so, rather than restating the default and calling it a change.
 - **Snapshots need a btrfs root.** `findmnt -no FSTYPE /` runs before anything else,
   and anything that is not btrfs — including an absent or silent `findmnt` — stops
   the script with an explanation instead of configuring a tool that cannot work.
+  The same question is asked again of the volume directory itself
+  (`/mnt/btrfs-root` by default): an empty placeholder with nothing mounted on it is
+  a plain directory that `btrfs subvolume create` would succeed inside, snapshotting
+  the wrong place, so the snapshot subvolume is left uncreated and the command to run
+  once it is mounted is printed instead.
   btrbk is the default; snapper is a separate, louder opt-in because its
   `/etc/apt/apt.conf.d/80snapper` takes a snapshot around **every** apt run.
   `timeshift` is not offered: it refuses any layout but Ubuntu's `@` and `@home`.
@@ -366,3 +378,21 @@ What a container cannot prove is what is left, and none of it is code:
   to show. `systemd-zram-generator` refuses to run in a container at all
   ("Running in a container, exiting").
 - Every version in this README is a snapshot taken on 2026-10-15.
+
+Four test files do reach the real world, and they are the ones to run before trusting a
+vendor route again. All need Docker and are off by default:
+
+```bash
+DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/vendor-container-smoke.js   # the five repositories, live
+DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/extras-container-smoke.js   # the system facts phase 4 relies on
+DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/apt-names-smoke.js          # every name in the map resolves
+DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/sway-container-smoke.js     # sway and waybar parse the config
+```
+
+`vendor-container-smoke` runs the real `add_vendor_repo` against the real hosts in both
+releases, reading each key URL out of the script that uses it, and checks that the
+ONLYOFFICE pin still keeps the distribution's `ttf-mscorefonts-installer`.
+`extras-container-smoke` confirms the system facts behind phase 4: that the zram package
+ships no options of its own, that a lower-numbered `sshd_config.d` drop-in really does
+beat `99-hardening.conf`, and that the Tor signing key still has the fingerprint
+`setup-tor-browser.sh` hard-codes.

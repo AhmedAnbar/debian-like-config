@@ -6,7 +6,7 @@
 # (their 2019 frontend is nautilus-dropbox), so the package is installed only after a
 # numeric candidate proves the vendor repository, and not something else, answered.
 set -Eeuo pipefail
-trap 'printf "Dropbox setup stopped at line %s. Review the error above before retrying.\n" "${BASH_LINENO[0]:-$LINENO}" >&2' ERR
+trap '__err_line=${BASH_LINENO[0]:-0}; (( __err_line > 0 )) || __err_line=$LINENO; printf "Dropbox setup stopped at line %s. Review the error above before retrying.\n" "$__err_line" >&2' ERR
 bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 dry_run=false
 case "${1:-}" in
@@ -92,15 +92,28 @@ if ask 'Add the Dropbox repository and install the frontend?'; then
     # repository, so a numeric candidate cannot come from anywhere but this repository.
     if add_vendor_repo dropbox "$key_url" "$sources_line" dropbox; then
         guard="${etc_root}/etc/default/dropbox-repo"
+        guard_ready=true
         if [[ -e "$guard" ]]; then
             printf '%s already exists, so the postinst will leave apt alone.\n' "$guard"
         else
-            attempt sudo install -Dm644 -- /dev/null "$guard"
+            # try, not attempt: the install below depends on this having worked. Without
+            # the guard the postinst replaces the sources file this run just wrote with
+            # its own over plain http, adds a second keyring, and rm -rf's any
+            # ~/.dropbox-dist below version 2.10. Installing anyway would undo the
+            # repository this run configured, and do it unauthenticated.
+            try sudo install -Dm644 -- /dev/null "$guard" || guard_ready=false
         fi
-        # Its own transaction, never one shared with the supporting package below: a name
-        # apt cannot resolve fails the whole transaction it is named in, and on Ubuntu that
-        # can be a universe package on a machine with universe disabled.
-        attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y dropbox
+        if "$guard_ready"; then
+            # Its own transaction, never one shared with the supporting package below: a
+            # name apt cannot resolve fails the whole transaction it is named in, and on
+            # Ubuntu that can be a universe package on a machine with universe disabled.
+            attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y dropbox
+        else
+            printf 'Could not write %s, so dropbox was not installed.\n' "$guard" >&2
+            printf 'Its postinst would have replaced the repository this run just added with\n' >&2
+            printf 'its own over plain http, and added a second keyring. The repository is\n' >&2
+            printf 'configured and verified; install the package once that file can be written.\n' >&2
+        fi
     else
         printf 'Nothing was installed, because the repository is not live.\n' >&2
         printf 'Neither release packages dropbox itself, so there is nothing to fall back to.\n' >&2

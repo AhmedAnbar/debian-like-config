@@ -25,7 +25,8 @@ const bodies = {
 
 // This machine has curl and gpg; a test that inherited them would prove nothing about
 // what the script fetched, so the PATH is assembled from scratch.
-const sandbox = ({release = 'debian', candidate = '2026.09.28', key = 'ok', map = null} = {}) => {
+const sandbox = ({release = 'debian', candidate = '2026.09.28', key = 'ok', map = null,
+    guardWrites = true} = {}) => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dropbox-smoke-'));
     const bin = path.join(dir, 'bin');
     fs.mkdirSync(bin);
@@ -44,14 +45,31 @@ const sandbox = ({release = 'debian', candidate = '2026.09.28', key = 'ok', map 
         : 'exit 22');
     stub('gpg', `out=''\nwhile [ $# -gt 0 ]; do [ "$1" = "-o" ] && out=$2; shift; done\n[ -n "$out" ] && printf 'DEARMORED\\n' > "$out"\nexit 0`);
     stub('apt-get', 'exit 0');
+    // The version table is part of the stub because add_vendor_repo checks where the
+    // candidate comes from, not just that there is one: apt reports a candidate for any
+    // installed package out of /var/lib/dpkg/status with no repository at all.
     stub('apt-cache', candidate
-        ? `case "$*" in *dropbox*) printf '  Installed: (none)\\n  Candidate: ${candidate}\\n' ;; *) printf '  Candidate: (none)\\n' ;; esac`
-        : "printf '  Installed: (none)\\n  Candidate: (none)\\n'");
+        ? `case "$*" in
+  *dropbox*) printf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'
+             printf '     ${candidate} 500\\n        500 https://linux.dropbox.com/debian trixie/main amd64 Packages\\n' ;;
+  *) printf '  Candidate: (none)\\n' ;;
+esac`
+        : "printf '  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n'");
     // None of these may ever run. They are here so that running one is recorded rather
     // than reaching the real thing: dropbox start -i above all, which prints its prompt,
     // dies on EOFError and still exits 0, so only the log can prove it was not called.
     for (const name of ['dropbox', 'systemctl', 'scp', 'ssh', 'dpkg-query', 'tar']) stub(name, 'exit 0');
-    fs.writeFileSync(path.join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    // sudo runs the command, except when this scenario is about the guard write failing:
+    // /etc/default/dropbox-repo is the whole reason the repository route is safe, so
+    // "could not write it" has to be a representable outcome.
+    fs.writeFileSync(path.join(bin, 'sudo'), guardWrites
+        ? '#!/bin/sh\nexec "$@"\n'
+        : `#!/bin/sh
+for a in "$@"; do
+  case "$a" in */etc/default/dropbox-repo) echo "sudo $*" >> ${log}; exit 1 ;; esac
+done
+exec "$@"
+`, {mode: 0o755});
     const osRelease = path.join(dir, 'os-release');
     fs.writeFileSync(osRelease, bodies[release]);
     const aptRoot = path.join(dir, 'root');
@@ -222,6 +240,22 @@ const cleanup = (s) => fs.rmSync(s.dir, {recursive: true, force: true});
     assert.match(result.log, /^apt-get install -y python3-gpg-sentinel$/m,
         'The supporting package name comes from the map group');
     cleanup(s);
+}
+
+// The guard is not optional. Without /etc/default/dropbox-repo the dropbox postinst
+// replaces the sources file add_vendor_repo just wrote with its own over plain http,
+// installs a second keyring, and rm -rf's ~/.dropbox-dist below version 2.10. So a run
+// that could not write the guard must not install the package: that would undo the
+// repository this run just configured, and over http.
+{
+    const s = sandbox({guardWrites: false});
+    const result = s.run([], yes);
+    assert.doesNotMatch(result.log, /apt-get install -y dropbox/,
+        'Without the guard the package must not be installed');
+    assert.match(result.stdout + result.stderr, /postinst|guard/i,
+        'Say why nothing was installed');
+    assert.equal(result.status, 1, 'And the failed step is reported to install.sh');
+    assert.match(result.stdout, /Steps that failed:/, 'The summary names it');
 }
 
 console.log('setup-dropbox-smoke: all checks passed');

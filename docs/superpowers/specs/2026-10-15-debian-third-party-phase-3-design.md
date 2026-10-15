@@ -130,7 +130,7 @@ Contract, in this order, because the order is the safety property:
 
 1. `install -d -m 0755 /etc/apt/keyrings`.
 2. Fetch the key to a temporary file and dearmor it. **Only then** write
-   `/etc/apt/sources.list.d/<id>.sources`. A sources file without its key is the
+   `/etc/apt/sources.list.d/<id>.list`. A sources file without its key is the
    one failure here that damages a working system: it makes every later
    `apt-get update` fail, including the installer's own fatal one.
 3. Its own `apt-get update`. Never the shared one.

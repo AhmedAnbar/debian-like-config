@@ -77,9 +77,12 @@ printf '%s: apt-get %s [frontend=%s]\\n' "$state" "$*" "\${DEBIAN_FRONTEND:-unse
 case "$1" in update) exit ${update} ;; esac
 exit 0
 `, {mode: 0o755});
+    // The version table is part of the stub because add_vendor_repo checks where the
+    // candidate comes from, not just that there is one: apt reports a candidate for any
+    // installed package out of /var/lib/dpkg/status with no repository at all.
     fs.writeFileSync(path.join(bin, 'apt-cache'), candidate
-        ? `#!/bin/sh\nprintf 'apt-cache %s\\n' "$*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: ${candidate}\\n'\n`
-        : `#!/bin/sh\nprintf 'apt-cache %s\\n' "$*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: (none)\\n'\n`,
+        ? `#!/bin/sh\nprintf 'apt-cache %s\\n' "$*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'\nprintf '     ${candidate} 500\\n        500 https://download.onlyoffice.com/repo/debian squeeze/main amd64 Packages\\n'\n`
+        : `#!/bin/sh\nprintf 'apt-cache %s\\n' "$*" >> ${log}\nprintf '  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n'\n`,
         {mode: 0o755});
     // Present so that calling one is a recorded fact rather than a crash.
     for (const name of ['systemctl', 'dpkg-query', 'dpkg', 'tar', 'ssh', 'scp', 'findmnt', 'snap', 'flatpak']) {
