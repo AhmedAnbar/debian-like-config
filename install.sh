@@ -68,9 +68,26 @@ group() {
     if ask 'Include these packages?'; then packages+=("${chosen[@]}"); fi
 }
 # editor-tools is offered by setup-nvim.sh, not here; every other group in the map is.
-mapfile -t group_ids < <(awk -F'\t' 'NR > 1 && $1 != "editor-tools" && $1 != "sway" && !seen[$1]++ { print $1 }' "$map")
+# The groups this installer owns are the ones it has a label for. Every other group
+# in the map belongs to a setup-*.sh script -- editor-tools to setup-nvim.sh, sway to
+# setup-sway.sh, and one per third-party application -- so the table is the source of
+# truth and there is no exclusion list to edit when a phase adds a group.
+mapfile -t group_ids < <(awk -F'\t' 'NR > 1 && !seen[$1]++ { print $1 }' "$map")
 (( ${#group_ids[@]} )) || { printf 'The package map lists no groups: %s\n' "$map" >&2; exit 1; }
-for id in "${group_ids[@]}"; do group "$id"; done
+delegated=()
+for id in "${group_ids[@]}"; do
+    if [[ -v group_label[$id] ]]; then
+        group "$id"
+    else
+        delegated+=("$id")
+    fi
+done
+# Named rather than silently skipped: a group this installer does not own is still
+# something the user can install, and the script that owns it says so by name.
+if (( ${#delegated[@]} )); then
+    printf '\nInstalled by their own scripts, not here: %s\n' "${delegated[*]}"
+    printf 'The closing summary names the command for each.\n'
+fi
 if (( ${#unavailable[@]} )); then
     printf '\nNot packaged on %s: %s\n' "$family" "${unavailable[*]}"
 fi
@@ -82,7 +99,18 @@ if (( ${#packages[@]} )); then
     printf '\nSelected packages: %s\n' "${packages[*]}"
     if ask 'Update the package lists and install the selected packages?'; then
         # A failed update must stop here: installing against a stale index is worse.
-        run sudo apt-get update
+        # But once a third-party repository exists, somebody else's outage can stop a
+        # run that worked yesterday, so the one fact the user needs comes first.
+        if ! run sudo apt-get update; then
+            printf '\nThe package lists could not be updated, so nothing was installed.\n' >&2
+            vendor_sources=("${apt_root}"/etc/apt/sources.list.d/*.list)
+            if [[ -e "${vendor_sources[0]}" ]]; then
+                printf 'Third-party repositories are configured on this machine:\n' >&2
+                printf '  %s\n' "${vendor_sources[@]}" >&2
+                printf 'If one of their hosts is down, removing its file above restores this run.\n' >&2
+            fi
+            exit 1
+        fi
         # Ubuntu's firefox package installs a snap from its postinst and asks debconf
         # about it; an installer the user is watching must not stop on that prompt.
         attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"

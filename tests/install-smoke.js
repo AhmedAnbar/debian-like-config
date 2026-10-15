@@ -161,6 +161,57 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
 // The emoji picker has its own test file, tests/emoji-smoke.js: it is no longer a
 // probe for a Rofi plugin but a picker reading unicode-data, with five scenarios.
 
+// install.sh offers the six groups it owns and no others: a group belonging to
+// another script must not appear, and the list comes from the label table rather
+// than from a filter that has to be edited every time a phase adds a group.
+{
+    const groupHome = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-owned-smoke-'));
+    const map = path.join(groupHome, 'map.tsv');
+    const rows = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').trim();
+    fs.writeFileSync(map, rows + '\n' +
+        ['invented', 'nothing-of-ours', 'cowsay', 'both',
+            'A group no script in this repository owns, to prove the installer does not offer it'
+        ].join('\t') + '\n');
+    const result = spawnSync('bash', [path.join(root, 'install.sh'), '--dry-run'], {
+        encoding: 'utf8', timeout: 60000, input: 'n\n'.repeat(80),
+        env: {...env(debian), DEBIAN_SETUP_MAP: map},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /cowsay/,
+        'A map group this installer does not own must not be offered by it');
+    assert.doesNotMatch(result.stdout, /Additional packages/,
+        'The fallback label means a group slipped through the ownership table');
+    for (const label of ['Core i3 desktop', 'PipeWire audio', 'Browser and file utilities']) {
+        assert.ok(result.stdout.includes(label), `Still offers: ${label}`);
+    }
+    fs.rmSync(groupHome, {recursive: true, force: true});
+}
+
+// A failing shared update still stops the run, but names the third-party sources
+// files this repository added: after phase 3 a vendor outage can block a re-run of
+// a previously working installer, and that is the one fact the user needs.
+{
+    const failHome = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-update-smoke-'));
+    const stubs = path.join(failHome, 'bin');
+    fs.mkdirSync(stubs);
+    fs.writeFileSync(path.join(stubs, 'apt-get'), '#!/bin/sh\n[ "$1" = update ] && exit 100\nexit 0\n', {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const aptRoot = path.join(failHome, 'root');
+    fs.mkdirSync(path.join(aptRoot, 'etc/apt/sources.list.d'), {recursive: true});
+    fs.writeFileSync(path.join(aptRoot, 'etc/apt/sources.list.d/google-chrome.list'),
+        'deb https://dl.google.com/linux/chrome/deb/ stable main\n');
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(80),
+        env: {...env(debian), HOME: failHome, PATH: `${stubs}:${process.env.PATH}`,
+            DEBIAN_SETUP_APT_ROOT: aptRoot},
+    });
+    assert.notEqual(result.status, 0, 'A failed update must still stop the run');
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.match(output, /google-chrome\.list/,
+        'Name the third-party sources file that can be the cause');
+    fs.rmSync(failHome, {recursive: true, force: true});
+}
+
 // Services, delegation and the closing summary, against stubs.
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-services-smoke-'));
@@ -256,29 +307,38 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.rmSync(home, {recursive: true, force: true});
 }
 
-// A fatal failure must point at the line that ran the command, not at run()'s own body.
+// A fatal failure must point at the line that ran the command, not at run()'s own
+// body. install.sh's only unguarded fatal run is now inside an if condition, where
+// bash exempts the failure from the ERR trap, so the property is pinned directly:
+// install.sh's own trap line, the library's own run(), and a call site this test
+// controls — which cannot be fooled by two files happening to agree on a number.
 {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-errline-smoke-'));
-    const stubs = path.join(home, 'bin');
-    fs.mkdirSync(stubs);
-    fs.writeFileSync(path.join(stubs, 'apt-get'), '#!/bin/sh\necho "apt-get: index unreachable" >&2\nexit 1\n', {mode: 0o755});
-    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
-    const source = fs.readFileSync(path.join(root, 'install.sh'), 'utf8').split('\n');
-    const callSite = source.findIndex((line) => line.includes('run sudo apt-get update')) + 1;
-    assert.ok(callSite > 0, 'The failing call site must be findable');
-    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
-        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(10),
-        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
-    });
-    // run() now lives in lib/common.sh, so the old "not run()'s line" check would compare
-    // line numbers from two different files. Every line the trap reports must be the call
-    // site, which says the same thing and cannot be fooled by the two files agreeing.
+    const errHome = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-errline-smoke-'));
+    const trap = fs.readFileSync(path.join(root, 'install.sh'), 'utf8')
+        .split('\n').find((line) => line.startsWith('trap ') && line.includes('ERR'));
+    assert.ok(trap, "install.sh must install an ERR trap for this test to pin");
+    const probe = [
+        'set -Eeuo pipefail',
+        trap,
+        'dry_run=false; target_config=$HOME/.config; backup_dir=$HOME/backup',
+        `source ${path.join(root, 'lib/common.sh')}`,
+        'run false',            // line 5: the call site the trap must name
+    ].join('\n');
+    const script = path.join(errHome, 'probe.sh');
+    fs.writeFileSync(script, probe + '\n');
+    const result = spawnSync('bash', [script], {encoding: 'utf8', timeout: 20000,
+        env: {...process.env, HOME: errHome}});
+    assert.notEqual(result.status, 0, 'A failing run must be fatal under set -e');
     const reported = [...new Set([...result.stderr.matchAll(/line (\d+)/g)].map((m) => Number(m[1])))];
-    assert.deepEqual(reported, [callSite], `The trap must name only the call site, got ${reported}`);
-    fs.rmSync(home, {recursive: true, force: true});
+    assert.deepEqual(reported, [5],
+        `The trap must name the call site, not run()'s body in the library, got ${reported}`);
+    fs.rmSync(errHome, {recursive: true, force: true});
 }
 
-// Every group in the map is offered. A hardcoded list in install.sh drops new groups silently.
+// A group this installer does not own is not installed here -- but it is not dropped
+// in silence either. Phase 1 asserted that every map group is offered, which was the
+// old mechanism talking; what matters to a user is that nothing in the map vanishes
+// without being named, so that is what this pins now.
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-groups-smoke-'));
     const mapText = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').trimEnd();
@@ -289,7 +349,14 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
         env: {...env(debian), HOME: home, DEBIAN_SETUP_MAP: extended},
     });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /cowsay/, 'A group present in the map must be offered');
+    assert.match(result.stdout, /Installed by their own scripts, not here:[^\n]*\bextras\b/,
+        'An unowned group must be named, not silently skipped');
+    assert.doesNotMatch(result.stdout, /cowsay/,
+        'Naming the group is not the same as offering its packages here');
+    for (const owned of ['editor-tools', 'sway']) {
+        assert.match(result.stdout, new RegExp(`Installed by their own scripts[^\n]*\\b${owned}\\b`),
+            `${owned} belongs to its own script and must be named there`);
+    }
     fs.rmSync(home, {recursive: true, force: true});
 }
 
