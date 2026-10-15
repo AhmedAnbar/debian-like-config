@@ -67,11 +67,19 @@ const ubuntuPreview = install(['--dry-run'], ubuntu, accept);
 assert.equal(ubuntuPreview.status, 0, ubuntuPreview.stderr);
 const selected = (result) => result.stdout.split('\n').find((line) => line.startsWith('Selected packages:'));
 
-// Debian gets the ESR browser; Ubuntu must not be offered the snap transitional package.
+// Each release gets the browser it actually has: Debian the ESR package, Ubuntu the
+// apt package whose job is to install the Firefox snap. Neither gets the other's.
 assert.match(selected(debianPreview), /\bfirefox-esr\b/);
-assert.doesNotMatch(selected(ubuntuPreview), /\bfirefox\b/, 'Never install apt firefox on Ubuntu: it is a snap stub');
+assert.doesNotMatch(selected(debianPreview), /\bfirefox(?!-esr)\b/, 'Debian has no apt firefox');
+assert.match(selected(ubuntuPreview), /\bfirefox\b/, 'Ubuntu installs Firefox through its snap-installing apt package');
+assert.doesNotMatch(selected(ubuntuPreview), /\bfirefox-esr\b/, 'Ubuntu has no firefox-esr');
+// snapd goes on both: Ubuntu needs it for the browser, Debian for phase 3.
+for (const preview of [debianPreview, ubuntuPreview]) {
+    assert.match(selected(preview), /\bsnapd\b/, 'snapd is offered on both releases');
+}
 assert.match(ubuntuPreview.stdout, /Skipped on Ubuntu:[^\n]*firefox-esr/);
-assert.match(ubuntuPreview.stdout, /Mozilla apt repository/, 'Say what replaces it');
+assert.match(ubuntuPreview.stdout, /Skipped on Ubuntu:[^\n]*Debian ships the ESR package/,
+    'The skipped line must say why, and the reason is no longer a Mozilla repository');
 
 // where=none rows are reported, never installed, and never leak the - placeholder.
 for (const preview of [debianPreview, ubuntuPreview]) {
@@ -81,7 +89,7 @@ for (const preview of [debianPreview, ubuntuPreview]) {
     // bluez appears twice in the map (bluez and bluez-utils both map to it).
     assert.equal(selected(preview).match(/\bbluez\b/g).length, 1, 'Duplicate apt names are collapsed');
     assert.match(preview.stdout, /sudo apt-get update/);
-    assert.match(preview.stdout, /sudo apt-get install/);
+    assert.match(preview.stdout, /sudo env DEBIAN_FRONTEND=noninteractive apt-get install/);
 }
 
 // A failing apt-get update must stop the run: never report an install that did not happen.
@@ -114,6 +122,10 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     for (const name of ['apt-get', 'systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
         fs.writeFileSync(path.join(homeBin, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
     }
+    // Same reason as the delegation block below: no step here may reach the network.
+    for (const [name, body] of [['curl', 'exit 1'], ['apt-cache', 'printf "  Candidate: 0.11.6-1\\n"']]) {
+        fs.writeFileSync(path.join(homeBin, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
+    }
     fs.writeFileSync(path.join(homeBin, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     const real = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(80),
@@ -132,36 +144,22 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     assert.ok(!fs.lstatSync(backupCopy).isSymbolicLink(),
         'A copied symlink is not a backup: the relative target no longer resolves from there');
     assert.equal(fs.readFileSync(backupCopy, 'utf8'), 'original i3 config\n', 'The original is recoverable');
+    // The Sway session is an optional addition, and declining it has to cost nothing:
+    // its dotfiles belong to setup-sway.sh. The portal preference especially — the X11
+    // session reads that file too, and nobody asked for Wayland here.
+    for (const directory of ['sway', 'waybar', 'mako', 'swaylock', 'xdg-desktop-portal']) {
+        assert.ok(!fs.existsSync(path.join(home, '.config', directory)),
+            `install.sh must leave ${directory}/ to setup-sway.sh`);
+    }
+    // What it does own is still installed, including the helpers both sessions share.
+    for (const relative of ['i3/config', 'i3/brightness.sh', 'i3/emoji.sh', 'rofi/i3-theme.rasi']) {
+        assert.ok(fs.existsSync(path.join(home, '.config', relative)), `Missing: ${relative}`);
+    }
     fs.rmSync(home, {recursive: true, force: true});
 }
 
-// The emoji picker must explain the missing Debian plugin instead of opening nothing.
-{
-    const probe = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-emoji-smoke-'));
-    const stubs = path.join(probe, 'bin');
-    fs.mkdirSync(stubs);
-    const log = path.join(probe, 'log');
-    fs.writeFileSync(path.join(stubs, 'rofi'), `#!/bin/sh\necho "rofi $*" >> ${log}\n`, {mode: 0o755});
-    fs.writeFileSync(path.join(stubs, 'notify-send'), `#!/bin/sh\necho "notify $*" >> ${log}\n`, {mode: 0o755});
-    const emoji = (pluginDir) => {
-        fs.writeFileSync(log, '');
-        const result = spawnSync('sh', [path.join(root, 'config/i3/emoji.sh')], {
-            encoding: 'utf8', timeout: 20000,
-            env: {...process.env, PATH: `${stubs}:/usr/bin:/bin`, ROFI_PLUGIN_PATH: pluginDir},
-        });
-        assert.equal(result.status, 0, result.stderr);
-        return {log: fs.readFileSync(log, 'utf8'), stderr: result.stderr};
-    };
-    const missing = emoji(path.join(probe, 'empty'));
-    assert.doesNotMatch(missing.log, /^rofi/m, 'Without the plugin, Rofi must not be started');
-    assert.match(missing.log, /^notify/m, 'The user is told why');
-    assert.match(missing.stderr, /emoji plugin/);
-    const present = path.join(probe, 'plugins');
-    fs.mkdirSync(present);
-    fs.writeFileSync(path.join(present, 'emoji.so'), '');
-    assert.match(emoji(present).log, /^rofi .*-modi emoji/m, 'With the plugin, the picker opens');
-    fs.rmSync(probe, {recursive: true, force: true});
-}
+// The emoji picker has its own test file, tests/emoji-smoke.js: it is no longer a
+// probe for a Rofi plugin but a picker reading unicode-data, with five scenarios.
 
 // Services, delegation and the closing summary, against stubs.
 {
@@ -173,13 +171,19 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
         fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\necho "${name} $*" >> ${log}\nexit 0\n`, {mode: 0o755});
     }
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    // This run delegates to setup-nvim.sh, which downloads a tarball when apt's Neovim
+    // is too old — and apt-cache answers nothing on a machine without apt. A test that
+    // reaches the network passes or fails with the network, so curl here is a stub that
+    // refuses, and the version apt offers is stubbed too.
+    fs.writeFileSync(path.join(stubs, 'curl'), `#!/bin/sh\necho "curl $*" >> ${log}\nexit 1\n`, {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'apt-cache'), '#!/bin/sh\nprintf "  Candidate: 0.11.6-1\\n"\n', {mode: 0o755});
     const result = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 120000, input: 'y\n'.repeat(120),
         env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
     });
     assert.equal(result.status, 0, result.stderr);
     const calls = fs.readFileSync(log, 'utf8');
-    for (const unit of ['NetworkManager.service', 'bluetooth.service', 'fstrim.timer']) {
+    for (const unit of ['NetworkManager.service', 'bluetooth.service', 'fstrim.timer', 'snapd.socket']) {
         assert.match(calls, new RegExp(`systemctl enable --now ${unit.replace('.', '\\.')}`), `Missing unit: ${unit}`);
     }
     assert.match(calls, /systemctl --user enable --now pipewire\.socket/);
@@ -187,6 +191,8 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     // The summary has to name the backup directory: it is the only way back.
     assert.match(result.stdout, /Backups, when needed: .*\.local\/state\/debian-desktop-setup/);
     assert.match(result.stdout, /Alt\+D/, 'Tell the user how to open the launcher');
+    assert.doesNotMatch(calls, /^curl /m, 'Nothing in this suite may depend on a network');
+    assert.match(calls, /apt-get install -y neovim/, 'Apt is new enough here, so no tarball');
     fs.rmSync(home, {recursive: true, force: true});
 }
 
@@ -230,6 +236,10 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     for (const name of ['apt-get', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git']) {
         fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
     }
+    // Same reason as the delegation block below: no step here may reach the network.
+    for (const [name, body] of [['curl', 'exit 1'], ['apt-cache', 'printf "  Candidate: 0.11.6-1\\n"']]) {
+        fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
+    }
     fs.writeFileSync(path.join(stubs, 'systemctl'), '#!/bin/sh\necho "systemctl: unit failed" >&2\nexit 1\n', {mode: 0o755});
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     const result = spawnSync('bash', [path.join(root, 'install.sh')], {
@@ -255,14 +265,16 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
     const source = fs.readFileSync(path.join(root, 'install.sh'), 'utf8').split('\n');
     const callSite = source.findIndex((line) => line.includes('run sudo apt-get update')) + 1;
-    const insideRun = source.findIndex((line) => line.trim().startsWith('if ! "$dry_run"; then "$@"')) + 1;
-    assert.ok(callSite > 0 && insideRun > 0, 'Both lines must be findable');
+    assert.ok(callSite > 0, 'The failing call site must be findable');
     const result = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(10),
         env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
     });
-    assert.match(result.stderr, new RegExp(`line ${callSite}\\b`), 'Name the failing call site');
-    assert.doesNotMatch(result.stderr, new RegExp(`line ${insideRun}\\b`), 'run() is not the culprit');
+    // run() now lives in lib/common.sh, so the old "not run()'s line" check would compare
+    // line numbers from two different files. Every line the trap reports must be the call
+    // site, which says the same thing and cannot be fooled by the two files agreeing.
+    const reported = [...new Set([...result.stderr.matchAll(/line (\d+)/g)].map((m) => Number(m[1])))];
+    assert.deepEqual(reported, [callSite], `The trap must name only the call site, got ${reported}`);
     fs.rmSync(home, {recursive: true, force: true});
 }
 
@@ -278,6 +290,39 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /cowsay/, 'A group present in the map must be offered');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
+// Ubuntu's firefox package installs a snap from its postinst: it must not be able to
+// hang on a debconf prompt, and a failure there must not take the whole run down.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-snap-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    const log = path.join(home, 'apt-env');
+    // The stub fails the way an offline snap installation does, and records its environment.
+    fs.writeFileSync(path.join(stubs, 'apt-get'), `#!/bin/sh
+if [ "$1" = install ]; then
+  echo "DEBIAN_FRONTEND=$DEBIAN_FRONTEND" >> ${log}
+  echo 'error: cannot install "firefox": Post-refresh hook failed' >&2
+  exit 1
+fi
+exit 0
+`, {mode: 0o755});
+    for (const name of ['systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim', 'chsh', 'git', 'snap']) {
+        fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const result = spawnSync('bash', [path.join(root, 'install.sh')], {
+        encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(120),
+        env: {...env(ubuntu), HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.match(fs.readFileSync(log, 'utf8'), /DEBIAN_FRONTEND=noninteractive/,
+        'The install step must be unattended: the firefox package prompts through debconf');
+    assert.match(result.stdout, /Steps that failed:[\s\S]*apt-get install/,
+        'A failed package step is reported, not swallowed');
+    assert.ok(fs.existsSync(path.join(home, '.config', 'i3', 'config')),
+        'The configuration is installed even when the packages could not be');
     fs.rmSync(home, {recursive: true, force: true});
 }
 

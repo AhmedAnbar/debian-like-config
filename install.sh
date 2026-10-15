@@ -17,74 +17,15 @@ case "${1:-}" in
     '') ;;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2 ;;
 esac
-if (( EUID == 0 )); then
-    printf 'Run as your normal user, without sudo. Commands needing root will use sudo.\n' >&2
-    exit 1
-fi
-command -v apt-get >/dev/null || { printf 'This installer requires apt-get: Debian or Ubuntu.\n' >&2; exit 1; }
-# Overridable so the tests can present a Debian or Ubuntu release on any machine.
-os_release=${DEBIAN_SETUP_OS_RELEASE:-/etc/os-release}
-[[ -r "$os_release" ]] || { printf 'Cannot read %s, so the distribution is unknown.\n' "$os_release" >&2; exit 1; }
-# os-release is shell syntax; read it in subshells so it cannot leak variables here.
-distro_id=$(. "$os_release" >/dev/null 2>&1; printf '%s' "${ID:-}")
-distro_like=$(. "$os_release" >/dev/null 2>&1; printf '%s' "${ID_LIKE:-}")
-distro_name=$(. "$os_release" >/dev/null 2>&1; printf '%s' "${PRETTY_NAME:-${ID:-}}")
-[[ -n "$distro_id" ]] || { printf '%s has no ID line, so the distribution is unknown.\n' "$os_release" >&2; exit 1; }
-unsupported() {
-    printf 'Unsupported distribution: %s.\n' "$1" >&2
-    printf 'This installer supports Debian 13 and Ubuntu 26.04, and derivatives that name one of them in ID_LIKE.\n' >&2
-    exit 1
-}
-case "$distro_id" in
-    debian) release=debian family=Debian ;;
-    ubuntu) release=ubuntu family=Ubuntu ;;
-    *)  case " $distro_like " in
-            *" ubuntu "*) release=ubuntu family=Ubuntu ;;
-            *" debian "*) release=debian family=Debian ;;
-            *) unsupported "$distro_id" ;;
-        esac ;;
-esac
+[[ -r "$bundle_dir/lib/common.sh" ]] || { printf 'Keep install.sh with its lib folder.\n' >&2; exit 1; }
 target_config="$HOME/.config"
 backup_dir="$HOME/.local/state/debian-desktop-setup/$(date +%Y%m%d-%H%M%S)-$$"
-ask() {
-    local answer
-    read -r -p "$1 [y/N] " answer || return 1
-    [[ "$answer" == y || "$answer" == Y || "$answer" == yes ]]
-}
-run() {
-    printf '  '; printf '%q ' "$@"; printf '\n'
-    if ! "$dry_run"; then "$@"; fi
-}
-# An optional step that fails must not abort the installation: the steps after it are
-# independent, and a machine left half configured with no summary is the worst outcome.
-attempt() {
-    if run "$@"; then return 0; fi
-    printf 'That step failed; continuing with the rest.\n' >&2
-    failed+=("$*")
-    return 0
-}
-# Every file this installer writes goes through here: one consent prompt, one backup,
-# one place where the mode is decided. The mode and root are arguments because the
-# executable scripts and the desktop entry differ only in those two things.
-install_file() {
-    local source=$1 relative=$2 mode=${3:-644} root=${4:-$target_config}
-    local destination="$root/$relative"
-    if [[ -f "$destination" ]] && cmp -s "$source" "$destination"; then
-        printf 'Unchanged: %s\n' "$destination"; return 0
-    fi
-    if [[ -e "$destination" || -L "$destination" ]]; then
-        ask "Back up and replace $destination?" || { declined+=("$destination"); return 0; }
-        run mkdir -p -- "$backup_dir/$(dirname -- "$relative")"
-        if [[ ! -e "$backup_dir/$relative" && ! -L "$backup_dir/$relative" ]]; then
-            # -L copies what the link points at: a copied relative symlink would be a
-            # dead link inside the backup directory, which is no backup at all.
-            run cp -aL -- "$destination" "$backup_dir/$relative"
-        fi
-        # Replace a symlink itself rather than writing through it into a dotfiles checkout.
-        run unlink -- "$destination"
-    fi
-    run install -Dm"$mode" -- "$source" "$destination"
-}
+# shellcheck source=lib/common.sh
+source "$bundle_dir/lib/common.sh"
+require_normal_user
+require_apt_get
+# Overridable so the tests can present a Debian or Ubuntu release on any machine.
+detect_release "${DEBIAN_SETUP_OS_RELEASE:-/etc/os-release}"
 printf 'Debian desktop setup — packages, configuration and services\n'
 printf 'Copyright (C) 2026 AhmedAnbar. GPL-3.0-only; no warranty. See LICENSE for redistribution terms.\n'
 printf 'Detected %s (%s family); installing with apt.\n' "${distro_name:-$distro_id}" "$family"
@@ -96,13 +37,11 @@ summary() {
     if ! "$finished"; then
         printf 'Stopped before the end (exit %s); what follows still applies.\n' "$status"
     fi
-    if (( ${#failed[@]} )); then printf 'Steps that failed:\n'; printf '  %s\n' "${failed[@]}"; fi
-    if (( ${#declined[@]} )); then printf 'Left alone at your request:\n'; printf '  %s\n' "${declined[@]}"; fi
-    printf 'Finished. Backups, when needed: %s\n' "$backup_dir"
-    printf 'Log out and log in to apply startup programs. Alt+D: Rofi launcher; Alt+Shift+S: screenshot.\n'
+    summary_prologue
+    printf 'Finished. Log out and log in to apply startup programs. Alt+D: Rofi launcher; Alt+Shift+S: screenshot.\n'
     printf 'Keyboard: English (US) + Arabic. Shift+Caps Lock switches layouts after login.\n'
     printf 'No login manager is installed in this phase: use the one you have, or startx with the bundled xinit.\n'
-    printf 'Sway, third-party applications and system extras arrive in later phases.\n'
+    printf 'Sway is available with: bash setup-sway.sh\n'
     # A run with failed steps must not report success to whatever called this script.
     if (( status == 0 && ${#failed[@]} )); then exit 1; fi
 }
@@ -119,28 +58,17 @@ declare -A group_label=(
     [shell]='Zsh and its completion plugins'
 )
 packages=()
-unavailable=()
-skipped=()
-declined=()
-failed=()
 group() {
-    local id=$1 list=() g arch apt where note
-    while IFS=$'\t' read -r g arch apt where note; do
-        [[ "$g" == "$id" ]] || continue
-        case "$where" in
-            none) unavailable+=("$arch ($note)") ;;
-            both) list+=("$apt") ;;
-            "$release") list+=("$apt") ;;
-            *) skipped+=("$apt ($note)") ;;
-        esac
-    done < <(tail -n +2 -- "$map")
-    (( ${#list[@]} )) || return 0
-    mapfile -t list < <(printf '%s\n' "${list[@]}" | sort -u)
-    printf '\n%s\n  %s\n' "${group_label[$id]:-Additional packages ($id)}" "${list[*]}"
-    if ask 'Include these packages?'; then packages+=("${list[@]}"); fi
+    # Not named "list": map_group_packages takes the array by name, and a nameref
+    # pointing at a local of the same name is a circular reference bash refuses.
+    local id=$1 chosen=()
+    map_group_packages "$map" "$id" "$release" chosen
+    (( ${#chosen[@]} )) || return 0
+    printf '\n%s\n  %s\n' "${group_label[$id]:-Additional packages ($id)}" "${chosen[*]}"
+    if ask 'Include these packages?'; then packages+=("${chosen[@]}"); fi
 }
 # editor-tools is offered by setup-nvim.sh, not here; every other group in the map is.
-mapfile -t group_ids < <(awk -F'\t' 'NR > 1 && $1 != "editor-tools" && !seen[$1]++ { print $1 }' "$map")
+mapfile -t group_ids < <(awk -F'\t' 'NR > 1 && $1 != "editor-tools" && $1 != "sway" && !seen[$1]++ { print $1 }' "$map")
 (( ${#group_ids[@]} )) || { printf 'The package map lists no groups: %s\n' "$map" >&2; exit 1; }
 for id in "${group_ids[@]}"; do group "$id"; done
 if (( ${#unavailable[@]} )); then
@@ -155,14 +83,22 @@ if (( ${#packages[@]} )); then
     if ask 'Update the package lists and install the selected packages?'; then
         # A failed update must stop here: installing against a stale index is worse.
         run sudo apt-get update
-        attempt sudo apt-get install -y "${packages[@]}"
+        # Ubuntu's firefox package installs a snap from its postinst and asks debconf
+        # about it; an installer the user is watching must not stop on that prompt.
+        attempt sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
     fi
 fi
 if ask 'Install the desktop configuration bundle (each existing changed file asks before replacement)?'; then
     while IFS= read -r -d '' source <&3; do
         relative=${source#"$bundle_dir/config/"}
         install_file "$source" "$relative"
-    done 3< <(find "$bundle_dir/config" -path "$bundle_dir/config/nvim" -prune -o -type f -print0 | sort -z)
+    # nvim belongs to setup-nvim.sh, and the Wayland session belongs to setup-sway.sh:
+    # a user who never asked for Sway must not find its configuration installed, least
+    # of all a portal preference the X11 session reads as well.
+    done 3< <(find "$bundle_dir/config" \( -path "$bundle_dir/config/nvim" \
+        -o -path "$bundle_dir/config/sway" -o -path "$bundle_dir/config/waybar" \
+        -o -path "$bundle_dir/config/mako" -o -path "$bundle_dir/config/swaylock" \
+        -o -path "$bundle_dir/config/xdg-desktop-portal" \) -prune -o -type f -print0 | sort -z)
     # The scripts must stay executable; plain configuration is installed mode 644 above.
     for script in i3/brightness.sh i3/emoji.sh i3/launcher.sh i3/touchpad.sh; do
         [[ -f "$bundle_dir/config/$script" ]] || continue
@@ -210,7 +146,10 @@ if ask 'Create and trust the mkcert local CA for HTTPS development (mkcert -inst
         attempt mkcert -install
     fi
 fi
-for service in NetworkManager.service bluetooth.service fstrim.timer; do
+printf '\nsnapd.socket is what makes snap packages work. On Ubuntu the browser is a snap and\n'
+printf 'needs it; on Debian nothing this project installs is a snap, and it stays idle until\n'
+printf 'something asks for one.\n'
+for service in NetworkManager.service bluetooth.service fstrim.timer snapd.socket; do
     if ask "Enable and start $service?"; then attempt sudo systemctl enable --now "$service"; fi
 done
 if ask 'Start and enable the PipeWire sockets and WirePlumber for this user?'; then

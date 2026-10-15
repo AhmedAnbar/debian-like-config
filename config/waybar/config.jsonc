@@ -1,0 +1,71 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 32,
+  "spacing": 4,
+  "modules-left": ["sway/workspaces", "sway/mode"],
+  "modules-center": ["clock"],
+  "modules-right": ["sway/language", "network", "bluetooth", "cpu", "memory", "disk", "battery", "tray"],
+  "sway/workspaces": {
+    "disable-scroll": true,
+    "all-outputs": true,
+    "format": "{name}",
+    "persistent-workspaces": {"1": [], "2": [], "3": [], "4": [], "5": []}
+  },
+  "sway/mode": {"format": "{}"},
+  "sway/language": {
+    "format": "{shortDescription}",
+    "tooltip-format": "{long}",
+    "on-click": "swaymsg input type:keyboard xkb_switch_layout next"
+  },
+  "network": {
+    "format-wifi": "Wi-Fi {signalStrength}%",
+    "format-ethernet": "LAN",
+    "format-disconnected": "Offline",
+    "tooltip-format": "{ifname}: {essid} {ipaddr}",
+    "on-click": "nm-connection-editor",
+    "interval": 5
+  },
+  "bluetooth": {
+    "format": "BT {status}",
+    "format-connected": "BT {num_connections}",
+    "tooltip-format": "{controller_alias}",
+    "tooltip-format-connected": "{device_enumerate}",
+    "tooltip-format-enumerate-connected": "{device_alias}",
+    "on-click": "blueman-manager"
+  },
+  "cpu": {"format": "CPU {usage}%", "interval": 5},
+  "memory": {"format": "RAM {percentage}%", "interval": 5},
+  "disk": {"format": "Disk {free}", "path": "/", "interval": 30},
+  "battery": {
+    "states": {"warning": 25, "critical": 15},
+    "format": "Bat {capacity}%",
+    "format-charging": "Charging {capacity}%",
+    "format-full": "Full",
+    "tooltip-format": "{timeTo}",
+    "interval": 10
+  },
+  "clock": {
+    "format": "{:%a %d %b  |  %I:%M %p}",
+    "tooltip-format": "<tt><small>{calendar}</small></tt>",
+    "calendar": {
+      "mode": "month",
+      "weeks-pos": "left",
+      "on-scroll": 1,
+      "format": {
+        "months": "<span color='#b4befe'><b>{}</b></span>",
+        "weeks": "<span color='#6c7086'>W{}</span>",
+        "weekdays": "<span color='#f9e2af'><b>{}</b></span>",
+        "today": "<span color='#1e1e2e' background='#b4befe'><b>{}</b></span>"
+      }
+    },
+    "actions": {
+      "on-click-right": "mode",
+      "on-scroll-up": "shift_up",
+      "on-scroll-down": "shift_down",
+      "on-click-middle": "shift_reset"
+    },
+    "interval": 30
+  },
+  "tray": {"icon-size": 18, "spacing": 8}
+}

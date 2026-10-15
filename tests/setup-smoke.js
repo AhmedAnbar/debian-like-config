@@ -56,4 +56,106 @@ assert.doesNotMatch(zshrc, /\/usr\/share\/zsh\/plugins\//,
 
 assert.deepEqual(fs.readdirSync(scratch), ['bin'], 'A preview must not create files');
 fs.rmSync(scratch, {recursive: true, force: true});
+// The library is sourced, not run: executing it must not look like a successful install.
+{
+    const direct = spawnSync('bash', [path.join(root, 'lib/common.sh')], {encoding: 'utf8', timeout: 10000});
+    assert.equal(direct.status, 0, 'Sourcing a function library has no side effects');
+    assert.equal(direct.stdout, '', 'A sourced library prints nothing on its own');
+}
+// Every script that uses the shared helpers must source them rather than redefine them.
+{
+    const body = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
+    assert.match(body, /source "\$bundle_dir\/lib\/common\.sh"/, 'install.sh must source the library');
+    assert.doesNotMatch(body, /^install_file\(\) \{/m, 'install.sh must not redefine install_file');
+}
+// The group reader is the one place that decides what a release installs.
+{
+    const groupScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-group-smoke-'));
+    const map = path.join(groupScratch, 'map.tsv');
+    fs.writeFileSync(map, ['group\tarch\tapt\twhere\tnote',
+        'demo\talpha\talpha\tboth\t-',
+        'demo\tbeta\tbeta-debian\tdebian\tDebian names it differently for a reason this test does not care about',
+        'demo\tgamma\tgamma-ubuntu\tubuntu\tUbuntu names it differently for a reason this test does not care about',
+        'demo\tdelta\t-\tnone\tNot packaged anywhere, and this note is long enough to satisfy the map rule',
+        'other\tepsilon\tepsilon\tboth\t-',
+        'demo\talpha-too\talpha\tboth\tA second row resolving to the same apt name, to prove deduplication',
+    ].join('\n') + '\n');
+    const probe = `
+        dry_run=true; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        map_group_packages ${map} demo debian chosen
+        printf '%s\\n' "\${chosen[@]}"
+        printf 'unavailable: %s\\n' "\${unavailable[*]}"
+        printf 'skipped: %s\\n' "\${skipped[*]}"
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: groupScratch}});
+    assert.equal(result.status, 0, result.stderr);
+    const printed = result.stdout.trim().split('\n');
+    assert.equal(printed[0], 'alpha', 'Deduplicated, and only this release');
+    assert.equal(printed.filter((l) => l === 'beta-debian').length, 1,
+        'The Debian-only package is included on Debian');
+    assert.equal(printed.filter((l) => l === 'gamma-ubuntu').length, 0,
+        'The other release\'s package is not installed here');
+    const reported = printed.join('\n');
+    assert.match(reported, /unavailable: delta \(Not packaged anywhere/, 'Report it with its reason');
+    assert.match(reported, /skipped: gamma-ubuntu \(Ubuntu names it/, 'Report the other release\'s package');
+    fs.rmSync(groupScratch, {recursive: true, force: true});
+}
+// Named rows, for a script that needs part of a group it does not install whole.
+{
+    const namedScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-named-smoke-'));
+    const map = path.join(namedScratch, 'map.tsv');
+    fs.writeFileSync(map, ['group\tarch\tapt\twhere\tnote',
+        'demo\talpha\talpha\tboth\t-',
+        'demo\tbeta\tbeta-debian\tdebian\tDebian names it differently for a reason this test does not care about',
+        'demo\tbeta\tbeta-ubuntu\tubuntu\tUbuntu names it differently for a reason this test does not care about',
+        'demo\tdelta\t-\tnone\tNot packaged anywhere, and this note is long enough to satisfy the map rule',
+        'other\t-\tepsilon\tboth\tA row with no Arch name, reached by its apt name instead',
+    ].join('\n') + '\n');
+    const probe = `
+        dry_run=true; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        map_named_packages ${map} debian picked alpha beta epsilon delta
+        printf '%s\\n' "\${picked[@]}"
+        printf 'unavailable: %s\\n' "\${unavailable[*]}"
+        printf 'skipped: %s\\n' "\${skipped[*]}"
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: namedScratch}});
+    assert.equal(result.status, 0, result.stderr);
+    const printed = result.stdout.trim().split('\n');
+    assert.deepEqual(printed.slice(0, 3), ['alpha', 'beta-debian', 'epsilon'],
+        'One row per name, this release\'s spelling, sorted and deduplicated');
+    assert.match(result.stdout, /skipped: beta-ubuntu/, "The other release's row is reported, not installed");
+    assert.match(result.stdout, /unavailable: delta \(Not packaged anywhere/, 'With its reason');
+    fs.rmSync(namedScratch, {recursive: true, force: true});
+}
+// The fast path must not leave a wrong mode behind: install.sh writes the shared
+// helpers 644 for the i3 session and setup-sway.sh installs the same bytes 755.
+{
+    const modeScratch = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-mode-smoke-'));
+    const probe = `
+        dry_run=false; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        printf 'helper body\\n' > "$HOME/helper.sh"
+        install -Dm644 -- "$HOME/helper.sh" "$target_config/helper.sh"
+        install_file "$HOME/helper.sh" helper.sh 755
+        stat -c '%a' "$target_config/helper.sh"
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: modeScratch}});
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim().split('\n').pop(), '755',
+        'Identical contents at the wrong mode must still be corrected');
+    fs.rmSync(modeScratch, {recursive: true, force: true});
+}
+// The spec named four consumers of the shared helpers, and a second copy of the
+// consent path is the defect the phase 1 review found.
+for (const script of ['setup-zsh.sh', 'setup-nvim.sh']) {
+    const body = fs.readFileSync(path.join(root, script), 'utf8');
+    assert.match(body, /source "\$bundle_dir\/lib\/common\.sh"/, `${script} must source the library`);
+    assert.doesNotMatch(body, /^ask\(\) \{/m, `${script} must not redefine ask`);
+    assert.doesNotMatch(body, /^run\(\) \{/m, `${script} must not redefine run`);
+}
 console.log('setup-smoke: all checks passed');

@@ -10,9 +10,8 @@ case "${1:-}" in
     '') ;;
     *) printf 'Unknown argument: %s\n' "$1" >&2; exit 2 ;;
 esac
-(( EUID != 0 )) || { printf 'Run as your normal user, without sudo.\n' >&2; exit 1; }
-ask() { local answer; read -r -p "$1 [y/N] " answer || return 1; [[ "$answer" == y || "$answer" == Y || "$answer" == yes ]]; }
-run() { printf '  '; printf '%q ' "$@"; printf '\n'; if ! "$dry_run"; then "$@"; fi; }
+source "$bundle_dir/lib/common.sh"
+require_normal_user
 if ask 'Install Zsh, Git, autosuggestions and syntax highlighting with apt?'; then
     run sudo apt-get install -y zsh git zsh-autosuggestions zsh-syntax-highlighting
 fi

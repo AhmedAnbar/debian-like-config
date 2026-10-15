@@ -9,12 +9,19 @@ const root = path.resolve(__dirname, '..');
 const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const archDir = process.env.ARCH_SETUP_DIR || path.join(os.homedir(), 'arch-desktop-setup');
 
+// The Arch repository keeps the Sway session and the machine profiles under sway/;
+// this one keeps every desktop's configuration under config/. sync-from-arch.sh
+// translates the prefix, and so must anything that compares the two checkouts.
+const upstream = (relative) => /^(config\/(sway|waybar|mako|swaylock|xdg-desktop-portal)|profiles)\//.test(relative)
+    ? path.join(archDir, 'sway', relative)
+    : path.join(archDir, relative);
+
 const shared = read('scripts/shared-files.txt').trim().split('\n');
 const adapted = read('scripts/adapted-files.txt').trim().split('\n').map((line) => line.split('\t'));
 const adaptedPaths = adapted.map(([file]) => file);
 
 // Every tracked configuration file belongs to exactly one list: no file falls through.
-const tracked = spawnSync('find', ['config', 'applications', 'zsh', '-type', 'f'],
+const tracked = spawnSync('find', ['config', 'applications', 'zsh', 'profiles', '-type', 'f'],
     {cwd: root, encoding: 'utf8'}).stdout.trim().split('\n').map((p) => p.replace(/^\.\//, ''));
 for (const file of tracked) {
     const inShared = shared.includes(file);
@@ -64,12 +71,12 @@ console.log('drift-smoke: all checks passed');
 
 // Shared files match byte for byte; adapted files really differ, or they should be shared.
 for (const file of shared) {
-    assert.equal(read(file), fs.readFileSync(path.join(archDir, file), 'utf8'), `Drifted: ${file}`);
+    assert.equal(read(file), fs.readFileSync(upstream(file), 'utf8'), `Drifted: ${file}`);
 }
 for (const [file] of adapted) {
-    const upstream = path.join(archDir, file);
-    if (!fs.existsSync(upstream)) continue;
-    assert.notEqual(read(file), fs.readFileSync(upstream, 'utf8'),
+    const source = upstream(file);
+    if (!fs.existsSync(source)) continue;
+    assert.notEqual(read(file), fs.readFileSync(source, 'utf8'),
         `${file} is identical upstream, so it belongs in shared-files.txt`);
 }
 
@@ -101,7 +108,7 @@ assert.match(nowhere.stdout, /nothing to compare/i);
         {encoding: 'utf8', timeout: 60000});
     assert.equal(pulled.status, 0, pulled.stdout + pulled.stderr);
     assert.equal(fs.readFileSync(victim, 'utf8'),
-        fs.readFileSync(path.join(archDir, 'config/kitty/kitty.conf'), 'utf8'), '--pull restores the file');
+        fs.readFileSync(upstream('config/kitty/kitty.conf'), 'utf8'), '--pull restores the file');
     fs.rmSync(clone, {recursive: true, force: true});
 }
 // A shared file that is listed but not yet committed has no copy in git: --pull must refuse.

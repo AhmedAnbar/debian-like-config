@@ -40,5 +40,28 @@ for (const [, arch, apt, where] of rows) {
         `Undocumented package: ${documented} (${where})`);
 }
 assert.match(readme, /not packaged/i, 'The catalogue must mark the unavailable packages');
+// The first column is what a reader types after apt-get install, so a package that
+// exists in neither release must not appear there under any name.
+const unavailableRows = readme.split('\n').filter((line) => line.includes(' | none | '));
+assert.equal(unavailableRows.length, rows.filter(([, , , where]) => where === 'none').length,
+    'Every unavailable package has a catalogue row');
+for (const line of unavailableRows) {
+    assert.match(line, /^\| — \| `[a-z0-9.+-]+` \| none \| \S/,
+        'An unavailable package has no apt name to print: ' + line);
+}
+
+// The Sway session has to be documented where a reader will look for it.
+assert.match(readme, /^## The Sway session$/m, 'Phase 2 documents its own section');
+assert.match(readme, /setup-sway\.sh/, 'Name the script that installs it');
+assert.match(readme, /dbus-run-session sway/, 'Document the route that needs no greeter');
+assert.match(readme, /Super\+period/, 'Document the emoji picker key');
+assert.match(readme, /swaymsg -t get_outputs/, 'Say how to write a profile on other hardware');
+// The script stands on its own, and the README has to say so: it installs the terminal,
+// the launcher and the rest of what the session invokes, not only the sway group.
+assert.match(readme, /install\.sh`?\s+never\s+ran/i,
+    'Say that the Sway session can be installed on a machine where install.sh never ran');
+// Claims the tests cannot support must be marked as unverified, not stated as fact.
+assert.match(readme, /not been run on a real Debian|confirmed on the machine|cannot show/i,
+    'Say what a container test does not prove');
 
 console.log('readme-smoke: all checks passed');

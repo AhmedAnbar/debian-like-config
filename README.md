@@ -71,10 +71,14 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `wireplumber` | `wireplumber` | both |  |
 | `alsa-utils` | `alsa-utils` | both |  |
 | `brightnessctl` | `brightnessctl` | both |  |
-| `rofi-emoji` (not packaged) | `rofi-emoji` | none | Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh reports it is unavailable and phase 2 decides on an upstream build |
+| — | `rofi-emoji` | none | Not packaged in Debian 13 or Ubuntu 26.04; config/i3/emoji.sh is a bundled picker reading unicode-data instead of a rofi plugin |
+| `unicode-data` | — | both | Provides /usr/share/unicode/emoji/emoji-test.txt, the list the bundled emoji picker reads |
+| `xdotool` | — | both | Types the chosen emoji into the focused X11 window; the Sway session uses wtype instead |
 | `fonts-noto-color-emoji` | `noto-fonts-emoji` | both | Debian names the colour emoji font separately |
 | `xclip` | `xclip` | both |  |
-| `firefox-esr` | `firefox` | debian | Debian ships the ESR package; Ubuntu's apt firefox is only a snap transitional package, so phase 3 adds the Mozilla apt repository instead |
+| `firefox-esr` | `firefox` | debian | Debian ships the ESR package and has no apt firefox |
+| `firefox` | `firefox` | ubuntu | Ubuntu's apt firefox is the package that installs the Firefox snap; there is no firefox-esr |
+| `snapd` | — | both | Ubuntu's browser is a snap; on Debian snapd installs nothing by itself and is groundwork for phase 3 |
 | `thunar` | `thunar` | both |  |
 | `thunar-archive-plugin` | `thunar-archive-plugin` | both |  |
 | `file-roller` | `file-roller` | both |  |
@@ -96,7 +100,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `mkcert` | `mkcert` | both |  |
 | `libnss3-tools` | `nss` | both | certutil, which mkcert needs, lives in libnss3-tools |
 | `iputils-ping` | `inetutils` | both | Debian splits the inetutils tools; ping is the one this desktop uses |
-| `uv` (not packaged) | `uv` | none | Astral publishes no apt package; the official installer script is used in a later phase |
+| — | `uv` | none | Astral publishes no apt package; the official installer script is used in a later phase |
 | `zsh` | `zsh` | both |  |
 | `zsh-autosuggestions` | `zsh-autosuggestions` | both |  |
 | `zsh-syntax-highlighting` | `zsh-syntax-highlighting` | both |  |
@@ -108,6 +112,26 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `unzip` | `unzip` | both |  |
 | `lazygit` | `lazygit` | both |  |
 | `fonts-jetbrains-mono` | `ttf-jetbrains-mono-nerd` | both | Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted |
+| `sway` | `sway` | both | Debian 13 has 1.10.1 and Ubuntu 26.04 has 1.11 |
+| `swaybg` | `swaybg` | both |  |
+| `swayidle` | `swayidle` | both |  |
+| `swaylock` | `swaylock` | both |  |
+| `waybar` | `waybar` | both | Debian 13 has 0.12.0 and Ubuntu 26.04 has 0.15.0; every module this configuration uses predates 0.12 |
+| `mako-notifier` | `mako` | both | Debian names the notification daemon package mako-notifier |
+| `grim` | `grim` | both |  |
+| `slurp` | `slurp` | both |  |
+| `wl-clipboard` | `wl-clipboard` | both |  |
+| `cliphist` | `cliphist` | both |  |
+| `jq` | `jq` | both |  |
+| `dbus` | `dbus` | both |  |
+| `libnotify-bin` | `libnotify` | both | notify-send ships in the -bin package, not the library |
+| `mate-polkit` | `polkit-gnome` | both | policykit-1-gnome was dropped from Debian 13; MATE's GTK agent is the equivalent and is packaged in both |
+| `qtwayland5` | `qt5-wayland` | both | Debian keeps the Qt 5 Wayland platform plugin under its soname |
+| `qt6-wayland` | `qt6-wayland` | both |  |
+| `xdg-desktop-portal-wlr` | `xdg-desktop-portal-wlr` | both |  |
+| `xdg-desktop-portal-gtk` | `xdg-desktop-portal-gtk` | both |  |
+| `xwayland` | `xorg-xwayland` | both | Debian drops the xorg- prefix; rofi is X11-only on Debian's 1.7.5, so the session needs it |
+| `wtype` | — | both | Types the chosen emoji into the focused Wayland window; no counterpart in the Arch package list |
 
 ## Keyboard
 
@@ -131,6 +155,54 @@ enabled without a prompt.
 No login manager is part of this phase: keep the one your installation already
 has, or start the session with `startx` using the bundled `xinit`.
 
+## The Sway session
+
+Phase 2 adds an optional Wayland session. The i3 desktop stays installed and
+unchanged; the two live side by side and the greeter's session menu chooses
+between them.
+
+```bash
+bash setup-sway.sh          # or --dry-run to see every step first
+```
+
+It installs the `sway` package group, the Sway, Waybar, mako, swaylock and
+portal configuration, and a screen profile. It also offers the programs the
+session invokes that `install.sh` would otherwise have installed — the terminal,
+rofi and its themes, `pactl`, `brightnessctl`, the fonts, the emoji list, the
+tray applets and the browser — so it works on a machine where `install.sh` never
+ran, and installs no Xorg and no i3 to do it. Every step asks first, and every
+replaced file is backed up under `~/.local/state/debian-desktop-setup/`.
+
+**Starting it.** The `sway` package installs
+`/usr/share/wayland-sessions/sway.desktop`, so an existing greeter lists Sway
+with no help from the installer. Without a greeter, log into a text console and
+run `dbus-run-session sway`. The installer offers to set up `lightdm` with
+`lightdm-gtk-greeter`, and declines by default.
+
+**The screen profile.** On an ASUS Zenbook UM5606 the bundled profile sets
+eDP-1 to 1920x1200 and maps the touchscreen to it. On other hardware, run
+`setup-sway.sh` from inside a Sway session and it writes a profile from
+`swaymsg -t get_outputs`; outside Sway it writes nothing and tells you to run
+that command after your first login. `~/.config/sway/config.d/00-local.conf` is
+the file to edit either way.
+
+**Keys.** Alt+D apps · Alt+B Firefox · Print screenshot · Super+period emoji ·
+Alt+C clipboard history · Alt+L lock · Alt+` notes · Shift+Caps Lock
+English/Arabic · Alt+Shift+E log out.
+
+**The emoji picker.** `rofi-emoji` is packaged in neither release, so
+Super+period runs a bundled picker that reads the emoji list from
+`unicode-data` and types the choice with `wtype` (Wayland) or `xdotool` (X11).
+If the compositor refuses synthetic input, the character goes to the clipboard
+and a notification says so. The i3 session uses the same script.
+
+**What has not been confirmed.** The tests in this repository validate the Sway
+configuration with `sway -C`, check that Waybar 0.12.0 and 0.15.0 both load
+`config.jsonc`, and resolve every package name in both releases. They cannot
+show that the session renders, that the touchscreen mapping works, or that the
+fonts look right: those are confirmed on the machine, and this README will say
+so when they have been.
+
 ## Backups and undo
 
 Every replaced file is copied to `~/.local/state/debian-desktop-setup/<timestamp>-<pid>/`
@@ -138,10 +210,12 @@ with its path preserved, so restoring one is a `cp` back.
 
 ## What comes later
 
-Phase 1 covers the i3 desktop, the shell and the editor. Still to come, each
-with its own design document under `docs/superpowers/specs/`:
+Phases 1 and 2 cover the i3 desktop, the shell, the editor and the Sway
+session. Still to come, each with its own design document under
+`docs/superpowers/specs/`:
 
-1. The Sway/Wayland session, including the Waybar version guard Debian needs.
-2. Third-party applications: Chrome, DBeaver, Teams, Dropbox, OnlyOffice,
-   Postman, and Tor Browser fetched through a VPS.
-3. System extras: Docker, SSH hardening, conky, zram and snapshots.
+1. Third-party applications: Chrome, DBeaver, Teams, Dropbox, OnlyOffice,
+   Postman, and Tor Browser fetched through a VPS. `snapd` is already installed,
+   so each application chooses between a snap and a vendor apt repository.
+2. System extras: Docker, SSH hardening, conky, zram and snapshots. The conky
+   panel fragments for both i3 and Sway arrive here.

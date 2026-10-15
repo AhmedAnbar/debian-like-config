@@ -1,0 +1,37 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+/* Catppuccin Mocha; text labels avoid requiring a specific icon font. */
+* {
+    font-family: "Noto Sans", "Noto Color Emoji", sans-serif;
+    font-size: 12px;
+    min-height: 0;
+    border: none;
+}
+window#waybar {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    border-bottom: 1px solid #313244;
+}
+#workspaces button {
+    color: #a6adc8;
+    background: transparent;
+    padding: 0 10px;
+    margin: 3px 2px;
+    border-radius: 6px;
+}
+#workspaces button.focused { background: #b4befe; color: #1e1e2e; }
+#workspaces button.urgent { background: #f38ba8; color: #1e1e2e; }
+#workspaces button:hover { background: #45475a; color: #cdd6f4; box-shadow: none; }
+#mode, #language, #network, #bluetooth, #cpu, #memory, #disk, #battery, #tray {
+    background: #313244;
+    padding: 0 8px;
+    margin: 4px 0;
+    border-radius: 6px;
+}
+#clock { color: #b4befe; padding: 0 8px; }
+#language { color: #cba6f7; }
+#network.disconnected, #battery.critical:not(.charging) { color: #f38ba8; }
+#battery.warning:not(.charging) { color: #f9e2af; }
+#battery.charging { color: #a6e3a1; }
+#tray { margin-right: 6px; }
+tooltip { background: #1e1e2e; border: 1px solid #b4befe; border-radius: 6px; }
+tooltip label { color: #cdd6f4; }

@@ -1,0 +1,14 @@
+color=1e1e2e
+font=Noto Sans
+indicator-radius=90
+indicator-thickness=6
+inside-color=313244
+ring-color=b4befe
+key-hl-color=cba6f7
+bs-hl-color=f38ba8
+text-color=cdd6f4
+inside-wrong-color=313244
+ring-wrong-color=f38ba8
+inside-ver-color=313244
+ring-ver-color=a6e3a1
+show-keyboard-layout
