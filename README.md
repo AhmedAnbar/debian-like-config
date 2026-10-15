@@ -132,6 +132,41 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `xdg-desktop-portal-gtk` | `xdg-desktop-portal-gtk` | both |  |
 | `xwayland` | `xorg-xwayland` | both | Debian drops the xorg- prefix; rofi is X11-only on Debian's 1.7.5, so the session needs it |
 | `wtype` | — | both | Types the chosen emoji into the focused Wayland window; no counterpart in the Arch package list |
+| `chromium` | `chromium` | debian | Debian's stable-security build tracks upstream Chrome; Ubuntu 26.04 packages no chromium at all, so Chrome is its browser |
+| — | `teams` | none | Microsoft retired the Linux client and its apt repository is empty; nothing is installed and the README names the web client instead |
+| — | `google-chrome` | none | Chrome exists only in Google apt repository, on both releases; setup-chrome.sh adds it with consent |
+| — | `dbeaver-ce` | none | Absent from both archives; setup-dbeaver.sh adds the vendor repository, which carries 26.2.2 for both releases |
+| — | `onlyoffice-bin` | none | Not in Debian 13 or Ubuntu 26.04; setup-onlyoffice.sh adds the vendor repository, pinned, which carries 10.0.0 |
+| — | `dropbox` | none | The archive packages are the 2019 frontend; setup-dropbox.sh adds the vendor repository, which carries 2026.09.28 |
+| `python3-gpg` | — | both | Without it the Dropbox frontend announces it will not verify the proprietary daemon signature and skips the check |
+| `docker.io` | `docker` | both | The apt fallback when the vendor repository cannot be reached; Debian ships no client inside it |
+| `docker-cli` | — | debian | Debian docker.io only Recommends the client, so it must be named; Ubuntu bundles /usr/bin/docker in the package |
+| `docker-compose` | `docker-compose` | debian | Debian has no docker-compose-v2; this package is Compose v2 and also provides /usr/bin/docker-compose |
+| `docker-compose-v2` | `docker-compose` | ubuntu | Plugin only on Ubuntu, with no /usr/bin/docker-compose symlink of its own |
+| `docker-buildx` | — | both | A Suggests rather than a dependency on both releases, so it must be named to be installed |
+| — | `lazydocker` | none | Packaged on neither release; setup-docker.sh installs the upstream static binary into ~/.local/bin |
+| — | `postman` | none | Postman publishes no apt package and no vendor repository; setup-postman.sh installs the official tarball into /opt |
+| `libgtk-3-0t64` | — | both | One of eleven Electron runtime libraries; ldd on the bundled Postman binary reports 26 missing sonames without them |
+| `libnss3` | — | both | Electron runtime library for the Postman tarball, proved missing by ldd on a bare install |
+| `libasound2t64` | — | both | Electron runtime library for the Postman tarball; the 64-bit time_t transition renamed it |
+| `libgbm1` | — | both | Electron runtime library for the Postman tarball, proved missing by ldd on a bare install |
+| `libcups2t64` | — | both | Electron runtime library for the Postman tarball; the 64-bit time_t transition renamed it |
+| `libatk-bridge2.0-0t64` | — | both | Electron accessibility bridge the Postman tarball links against; renamed by the time_t transition |
+| `libxkbcommon0` | — | both | Electron runtime library for the Postman tarball, proved missing by ldd on a bare install |
+| `libatspi2.0-0t64` | — | both | Electron accessibility library the Postman tarball links against; renamed by the time_t transition |
+| `libxcomposite1` | — | both | X11 runtime library the Postman tarball links against, proved missing by ldd on a bare install |
+| `libxdamage1` | — | both | X11 runtime library the Postman tarball links against, proved missing by ldd on a bare install |
+| `libxrandr2` | — | both | X11 runtime library the Postman tarball links against, proved missing by ldd on a bare install |
+| `desktop-file-utils` | — | both | Installs the Postman menu entry; its basename must stay Postman.desktop or postman:// links break |
+| — | `torbrowser-launcher` | none | Packaged in Debian contrib and Ubuntu universe, but both ship a dead signing key and must reach torproject.org on first run; setup-tor-browser.sh installs the signed upstream tarball instead |
+| `gnupg` | — | both | Verifies the Tor Browser tarball signature, which is done offline so the relay never has to be trusted |
+| `xz-utils` | — | both | Unpacks the Tor Browser tarball, which ships as tar.xz |
+| `conky-std` | `conky` | both | conky is a pure virtual package with no installation candidate; -std carries the Lua config, Xft and ARGB own-window the panel needs |
+| `systemd-zram-generator` | `zram-generator` | both | Both releases prefix the package systemd-; the Arch name zram-generator does not exist in apt |
+| `btrbk` | `btrbk` | both | 0.32.6 on both releases; ships only btrbk.conf.example, so this repository installs the configuration |
+| `snapper` | `snapper` | both | Needs the configured path to be a btrfs subvolume, and adds an apt hook that snapshots around every later apt run |
+| `btrfs-progs` | `btrfs-progs` | both | The subvolume tooling both snapshot routes call, and what findmnt checks for before either runs |
+| `openssh-server` | — | both | sshd lives here, not in the openssh-client the dev group installs; installing it starts a listening service |
 
 ## Keyboard
 
