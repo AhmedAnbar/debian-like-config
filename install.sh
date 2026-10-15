@@ -42,6 +42,10 @@ summary() {
     printf 'Keyboard: English (US) + Arabic. Shift+Caps Lock switches layouts after login.\n'
     printf 'No login manager is installed in this phase: use the one you have, or startx with the bundled xinit.\n'
     printf 'Sway is available with: bash setup-sway.sh\n'
+    if (( ${#not_run_here[@]} )); then
+        printf 'Not installed here, and each still one command away:\n'
+        printf '  %s\n' "${not_run_here[@]}"
+    fi
     # A run with failed steps must not report success to whatever called this script.
     if (( status == 0 && ${#failed[@]} )); then exit 1; fi
 }
@@ -58,6 +62,7 @@ declare -A group_label=(
     [shell]='Zsh and its completion plugins'
 )
 packages=()
+not_run_here=()
 group() {
     # Not named "list": map_group_packages takes the array by name, and a nameref
     # pointing at a local of the same name is a circular reference bash refuses.
@@ -103,7 +108,7 @@ if (( ${#packages[@]} )); then
         # run that worked yesterday, so the one fact the user needs comes first.
         if ! run sudo apt-get update; then
             printf '\nThe package lists could not be updated, so nothing was installed.\n' >&2
-            vendor_sources=("${apt_root}"/etc/apt/sources.list.d/*.list)
+            vendor_sources=("${etc_root}"/etc/apt/sources.list.d/*.list)
             if [[ -e "${vendor_sources[0]}" ]]; then
                 printf 'Third-party repositories are configured on this machine:\n' >&2
                 printf '  %s\n' "${vendor_sources[@]}" >&2
@@ -128,7 +133,8 @@ if ask 'Install the desktop configuration bundle (each existing changed file ask
         -o -path "$bundle_dir/config/mako" -o -path "$bundle_dir/config/swaylock" \
         -o -path "$bundle_dir/config/xdg-desktop-portal" \) -prune -o -type f -print0 | sort -z)
     # The scripts must stay executable; plain configuration is installed mode 644 above.
-    for script in i3/brightness.sh i3/emoji.sh i3/launcher.sh i3/touchpad.sh; do
+    for script in i3/brightness.sh i3/emoji.sh i3/launcher.sh i3/touchpad.sh \
+        conky/start.sh conky/switch.sh; do
         [[ -f "$bundle_dir/config/$script" ]] || continue
         install_file "$bundle_dir/config/$script" "$script" 755
     done
@@ -189,4 +195,48 @@ fi
 if ask 'Restore Neovim and its plugins?'; then
     if "$dry_run"; then attempt bash "$bundle_dir/setup-nvim.sh" --dry-run; else attempt bash "$bundle_dir/setup-nvim.sh"; fi
 fi
+# Phases 3 and 4: one script per subject, each asked separately and declined by default,
+# so a user who only ever runs this installer is still asked about every application.
+# attempt, not try: they are independent of each other and of everything above, and a
+# vendor host that is down today must not stop the ones after it. Hardening is last
+# because it is the only one that can lock this machine's owner out of it.
+#
+# Overridable so the tests can prove this mechanism without running eleven interactive
+# installers that reach vendor hosts: DEBIAN_SETUP_DELEGATES is a space-separated list
+# of scripts in this directory.
+read -r -a delegate_scripts <<< "${DEBIAN_SETUP_DELEGATES-setup-chrome.sh setup-dbeaver.sh \
+setup-onlyoffice.sh setup-dropbox.sh setup-docker.sh setup-postman.sh setup-tor-browser.sh \
+setup-conky.sh setup-zram.sh setup-snapshots.sh setup-hardening.sh}"
+declare -A delegate_prompt=(
+    [setup-chrome.sh]="Install Google Chrome from Google's own apt repository?"
+    [setup-dbeaver.sh]='Install DBeaver CE, the database tool, from dbeaver.io?'
+    [setup-onlyoffice.sh]='Install ONLYOFFICE Desktop Editors from the vendor repository (a 279 MB download)?'
+    [setup-dropbox.sh]="Install the Dropbox frontend from Dropbox's own apt repository?"
+    [setup-docker.sh]='Install Docker Engine, compose and lazydocker?'
+    [setup-postman.sh]='Install Postman from the vendor tarball (no checksum or signature is published)?'
+    [setup-tor-browser.sh]='Install Tor Browser from an already-staged signed tarball?'
+    [setup-conky.sh]='Install the conky system panel for both sessions?'
+    [setup-zram.sh]='Set up zram swap through systemd-zram-generator?'
+    [setup-snapshots.sh]='Set up btrfs snapshots (btrbk on a timer, snapper separately)?'
+    [setup-hardening.sh]='Harden SSH on this machine? It changes how you can log in to it.'
+)
+not_run_here=()
+printf '\nThese install one application or system feature each. Declining costs nothing: the\n'
+printf 'summary names the command for every one you say no to.\n'
+for script in "${delegate_scripts[@]}"; do
+    [[ -n "$script" ]] || continue
+    if [[ ! -r "$bundle_dir/$script" ]]; then
+        printf 'Not in this bundle, so it cannot be offered: %s\n' "$script" >&2
+        continue
+    fi
+    if ask "${delegate_prompt[$script]:-Run $script?}"; then
+        if "$dry_run"; then
+            attempt bash "$bundle_dir/$script" --dry-run
+        else
+            attempt bash "$bundle_dir/$script"
+        fi
+    else
+        not_run_here+=("bash $script")
+    fi
+done
 finished=true

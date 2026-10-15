@@ -1,4 +1,10 @@
 applications/retext-preview.desktop
+config/conky/panel.lua
+config/conky/start.sh
+config/conky/switch.sh
+config/conky/themes/catppuccin.conf
+config/conky/themes/dracula.conf
+config/conky/themes/nord.conf
 config/flameshot/flameshot.ini
 config/fontconfig/fonts.conf
 config/gtk-3.0/settings.ini

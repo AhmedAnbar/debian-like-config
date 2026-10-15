@@ -22,6 +22,10 @@ const osRelease = (body, name = 'os-release') => {
 const env = (file) => ({
     ...process.env, HOME: scratch, PATH: `${bin}:${process.env.PATH}`,
     DEBIAN_SETUP_OS_RELEASE: file,
+    // No delegates unless a block asks for them: the real ones are interactive
+    // installers that reach vendor hosts, and one of them scps from another machine.
+    // An empty list means none, which is why install.sh reads it with - and not :- .
+    DEBIAN_SETUP_DELEGATES: '',
 });
 const install = (args, file, answers = 'n\n'.repeat(60)) =>
     spawnSync('bash', [path.join(root, 'install.sh'), ...args],
@@ -155,6 +159,14 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     for (const relative of ['i3/config', 'i3/brightness.sh', 'i3/emoji.sh', 'rofi/i3-theme.rasi']) {
         assert.ok(fs.existsSync(path.join(home, '.config', relative)), `Missing: ${relative}`);
     }
+    // The i3 configuration this installer writes autostarts the conky panel, so the
+    // panel's own scripts have to be installed and executable even for a user who
+    // never runs setup-conky.sh — they are a no-op until conky itself is there.
+    for (const relative of ['conky/start.sh', 'conky/switch.sh']) {
+        const target = path.join(home, '.config', relative);
+        assert.ok(fs.existsSync(target), `Missing: ${relative}`);
+        assert.equal(fs.statSync(target).mode & 0o777, 0o755, `${relative} must be executable`);
+    }
     fs.rmSync(home, {recursive: true, force: true});
 }
 
@@ -203,7 +215,7 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     const result = spawnSync('bash', [path.join(root, 'install.sh')], {
         encoding: 'utf8', timeout: 60000, input: 'y\n'.repeat(80),
         env: {...env(debian), HOME: failHome, PATH: `${stubs}:${process.env.PATH}`,
-            DEBIAN_SETUP_APT_ROOT: aptRoot},
+            DEBIAN_SETUP_ETC_ROOT: aptRoot},
     });
     assert.notEqual(result.status, 0, 'A failed update must still stop the run');
     const output = `${result.stdout}\n${result.stderr}`;
@@ -358,6 +370,88 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
             `${owned} belongs to its own script and must be named there`);
     }
     fs.rmSync(home, {recursive: true, force: true});
+}
+
+// The phase 3 and 4 scripts are offered at the end of the run, each its own question,
+// each declined by default, with --dry-run passed through. The eleven real ones are
+// interactive installers that reach vendor hosts — setup-tor-browser.sh would scp from
+// another machine — so the mechanism is proved against fixture scripts named by
+// DEBIAN_SETUP_DELEGATES, and the default list is checked separately below.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-delegate-smoke-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    const log = path.join(home, 'calls');
+    for (const name of ['apt-get', 'systemctl', 'gsettings', 'mkcert', 'xdg-mime', 'i3', 'nvim',
+        'chsh', 'git', 'curl', 'scp', 'ssh']) {
+        fs.writeFileSync(path.join(stubs, name), `#!/bin/sh\necho "${name} $*" >> ${log}\nexit 0\n`,
+            {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    fs.writeFileSync(path.join(stubs, 'apt-cache'), '#!/bin/sh\nprintf "  Candidate: 0.11.6-1\\n"\n',
+        {mode: 0o755});
+    // Two fixtures in the bundle directory, because that is where install.sh looks for a
+    // delegate: one that records how it was called, one that fails the way a dead vendor
+    // host does.
+    const good = path.join(root, 'setup-delegate-fixture-ok.sh');
+    const bad = path.join(root, 'setup-delegate-fixture-fail.sh');
+    fs.writeFileSync(good, `#!/usr/bin/env bash\necho "fixture-ok $*" >> ${log}\nprintf 'fixture ok\\n'\n`,
+        {mode: 0o755});
+    fs.writeFileSync(bad, `#!/usr/bin/env bash\necho "fixture-fail $*" >> ${log}\nexit 1\n`,
+        {mode: 0o755});
+    const delegates = 'setup-delegate-fixture-ok.sh setup-delegate-fixture-fail.sh';
+    const runInstaller = (args, answers) => spawnSync('bash', [path.join(root, 'install.sh'), ...args], {
+        encoding: 'utf8', timeout: 90000, input: answers,
+        env: {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`,
+            DEBIAN_SETUP_DELEGATES: delegates},
+    });
+    try {
+        // A preview names the command with the flag passed through, and runs nothing —
+        // the same contract install.sh has kept for setup-zsh.sh since phase 1.
+        const preview = runInstaller(['--dry-run'], 'y\n'.repeat(120));
+        assert.equal(preview.status, 0, preview.stderr);
+        assert.match(preview.stdout, /bash \S*setup-delegate-fixture-ok\.sh --dry-run/,
+            'A preview names the delegate with --dry-run passed through');
+        assert.match(preview.stdout, /bash \S*setup-delegate-fixture-fail\.sh --dry-run/,
+            'Every delegate is offered, not just the first');
+        assert.equal(fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', '',
+            'And a preview runs none of them');
+
+        // A real run executes each one, and a failure neither stops the next nor is lost.
+        const real = runInstaller([], 'y\n'.repeat(120));
+        const calls = fs.readFileSync(log, 'utf8');
+        assert.match(calls, /^fixture-ok $/m, 'A real run executes the delegate, with no flag');
+        assert.match(calls, /^fixture-fail $/m,
+            'And keeps going after one fails, because they are independent of each other');
+        assert.match(real.stdout, /Steps that failed:[\s\S]*setup-delegate-fixture-fail\.sh/,
+            'The delegate that failed is named in the summary');
+        assert.notEqual(real.status, 0, 'And the run reports failure to whatever called it');
+
+        // Declining is free: the summary names the command, so nothing is lost by saying no.
+        const declined = runInstaller(['--dry-run'], 'n\n'.repeat(120));
+        assert.equal(declined.status, 0, 'Declining everything is not a failure');
+        assert.match(declined.stdout, /bash setup-delegate-fixture-ok\.sh/,
+            'A declined delegate is named with the command that runs it later');
+    } finally {
+        fs.rmSync(good, {force: true});
+        fs.rmSync(bad, {force: true});
+        fs.rmSync(home, {recursive: true, force: true});
+    }
+}
+
+// The default list is every phase 3 and 4 script in the bundle, so a user who only ever
+// runs install.sh is asked about all of them.
+{
+    const body = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
+    for (const script of ['setup-chrome.sh', 'setup-dbeaver.sh', 'setup-onlyoffice.sh',
+        'setup-dropbox.sh', 'setup-docker.sh', 'setup-postman.sh', 'setup-tor-browser.sh',
+        'setup-conky.sh', 'setup-zram.sh', 'setup-snapshots.sh', 'setup-hardening.sh']) {
+        assert.ok(body.includes(script), `install.sh must offer ${script}`);
+        assert.ok(fs.existsSync(path.join(root, script)), `${script} must exist to be offered`);
+    }
+    // Last, because it is the only one that can lock the user out of their own machine.
+    assert.ok(body.lastIndexOf('setup-hardening.sh') > body.lastIndexOf('setup-chrome.sh'),
+        'SSH hardening is offered last');
 }
 
 // Ubuntu's firefox package installs a snap from its postinst: it must not be able to

@@ -179,4 +179,43 @@ for (const script of ['setup-zsh.sh', 'setup-nvim.sh']) {
     assert.match(result.stdout, /try success: zero/, 'And try returns 0 when the command works');
     fs.rmSync(tryScratch, {recursive: true, force: true});
 }
+// backup_system_file: one way to copy a file out of /etc before replacing it. Read as
+// root, because a file there may be readable by root alone; landed as the user, because
+// a root-owned copy in their own backup directory is one they cannot delete without
+// sudo. Two scripts had settled on one of those halves each, with comments calling the
+// other half wrong.
+{
+    const bk = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-backup-smoke-'));
+    const stubs = path.join(bk, 'bin');
+    fs.mkdirSync(stubs);
+    // sudo runs the command, so what the helper asks for is what actually happens.
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const etc = path.join(bk, 'etc');
+    fs.mkdirSync(etc);
+    const secret = path.join(etc, 'btrbk.conf');
+    fs.writeFileSync(secret, 'volume /\n', {mode: 0o600});
+    const probe = `
+        dry_run=false; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        backup_system_file ${secret} btrbk.conf
+        printf 'returned %s\\n' "$?"
+        backup_system_file ${path.join(etc, 'not-there.conf')} absent.conf
+        printf 'absent returned %s\\n' "$?"
+        printf 'failed: %s\\n' "${'$'}{failed[*]:-none}"
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 10000,
+        env: {...process.env, HOME: bk, PATH: `${stubs}:/usr/bin:/bin`}});
+    assert.match(result.stdout, /returned 0/, result.stdout + result.stderr);
+    const copy = path.join(bk, 'backup/btrbk.conf');
+    assert.ok(fs.existsSync(copy), 'The file is copied into the backup directory');
+    assert.equal(fs.readFileSync(copy, 'utf8'), 'volume /\n', 'Byte for byte');
+    assert.equal(fs.statSync(copy).uid, process.getuid(),
+        'The copy belongs to the user, who must be able to delete their own backup');
+    assert.match(result.stdout, /absent returned 0/,
+        'A file that is not there needs no backup and is not a failure');
+    assert.ok(!fs.existsSync(path.join(bk, 'backup/absent.conf')));
+    assert.match(result.stdout, /failed: none/, 'And nothing is recorded as having failed');
+    fs.rmSync(bk, {recursive: true, force: true});
+}
+
 console.log('setup-smoke: all checks passed');

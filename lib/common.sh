@@ -36,10 +36,13 @@ detect_release() {
             esac ;;
     esac
 }
-# Test seams, as DEBIAN_SETUP_MAP and DEBIAN_SETUP_OS_RELEASE are elsewhere: a
-# prefix for the system paths the vendor-repository and tarball helpers write to,
-# so a test can exercise them without a root filesystem of its own.
-apt_root=${DEBIAN_SETUP_APT_ROOT:-}
+# Test seams, as DEBIAN_SETUP_MAP and DEBIAN_SETUP_OS_RELEASE are elsewhere, so a
+# test can exercise these without a root filesystem of its own. etc_root prefixes
+# every absolute system path any script here writes to: apt's keyrings, sources and
+# pins, systemd's zram-generator.conf, btrbk's and snapper's configuration, sshd's
+# drop-in. One seam, so a reader of two scripts side by side can tell what the rule
+# is — a script that invents its own breaks that, whatever it names it.
+etc_root=${DEBIAN_SETUP_ETC_ROOT:-}
 opt_root=${DEBIAN_SETUP_OPT_ROOT:-/opt}
 share_root=${DEBIAN_SETUP_SHARE_ROOT:-/usr/share}
 # Records the failure as attempt does, and returns the command's status so the
@@ -52,14 +55,30 @@ try() {
     (( status == 0 )) || failed+=("$*")
     return "$status"
 }
+# Copies a file out of /etc before something here replaces it. Read with sudo,
+# because a file there may be readable by root alone, and a backup that could not be
+# taken must stop the replacement rather than precede it; then chowned, because a
+# root-owned copy in the user's own backup directory is one they cannot read or
+# delete without sudo. Preserves mode and timestamps, so the copy is a faithful one.
+# A file that does not exist needs no backup and is not a failure.
+# Usage: backup_system_file <path> [name inside the backup directory]
+backup_system_file() {
+    local source=$1 name=${2:-}
+    [[ -n "$name" ]] || name=$(basename -- "$source")
+    [[ -e "$source" || -L "$source" ]] || return 0
+    run mkdir -p -- "$backup_dir"
+    try sudo cp -a -- "$source" "$backup_dir/$name" || return 1
+    try sudo chown -- "$(id -un):$(id -gn)" "$backup_dir/$name" || return 1
+    printf 'Backed up %s to %s\n' "$source" "$backup_dir/$name"
+}
 # Adds a third-party apt repository, verifies it, and removes it again when it
 # cannot be verified.
 # Usage: add_vendor_repo <id> <key url> <sources line> <package to verify> [pin file]
 add_vendor_repo() {
     local id=$1 key_url=$2 line=$3 package=$4 pin=${5:-}
-    local keyring="$apt_root/etc/apt/keyrings/$id.gpg"
-    local sources="$apt_root/etc/apt/sources.list.d/$id.list"
-    local preferences="$apt_root/etc/apt/preferences.d/$id"
+    local keyring="$etc_root/etc/apt/keyrings/$id.gpg"
+    local sources="$etc_root/etc/apt/sources.list.d/$id.list"
+    local preferences="$etc_root/etc/apt/preferences.d/$id"
     printf '\nRepository %s\n' "$id"
     printf '  key:     %s\n' "$key_url"
     printf '  sources: %s\n' "$line"
@@ -133,13 +152,19 @@ install_tarball_app() {
         failed+=("install_tarball_app $name")
         return 1
     fi
-    run sudo install -d -m 0755 -- "$versioned"
-    run sudo tar -xf "$archive" -C "$versioned" --strip-components=1
+    # try, not run, for every command from here down. Each caller invokes this helper
+    # from a context where set -e is suspended — an if condition, or || true — so a
+    # failing unpack would otherwise fall through to the closing printf and report an
+    # application as installed with nothing under the install root.
+    try sudo install -d -m 0755 -- "$versioned" || return 1
+    try sudo tar -xf "$archive" -C "$versioned" --strip-components=1 || return 1
     # A relative link, so moving the install root cannot turn it into a dead one.
-    run sudo ln -sfn -- "$version" "$app/current"
-    run sudo install -Dm644 -- "$desktop" "$share_root/applications/$(basename -- "$desktop")"
-    [[ -z "$icon" ]] || run sudo install -Dm644 -- "$icon" \
-        "$share_root/icons/hicolor/128x128/apps/$name.png"
+    try sudo ln -sfn -- "$version" "$app/current" || return 1
+    try sudo install -Dm644 -- "$desktop" "$share_root/applications/$(basename -- "$desktop")" || return 1
+    if [[ -n "$icon" ]]; then
+        try sudo install -Dm644 -- "$icon" \
+            "$share_root/icons/hicolor/128x128/apps/$name.png" || return 1
+    fi
     printf '%s %s is installed; the previous version is still under %s.\n' "$name" "$version" "$app"
 }
 unavailable=()

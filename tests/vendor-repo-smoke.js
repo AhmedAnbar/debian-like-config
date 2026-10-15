@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // add_vendor_repo against stubs. No repository is added and no apt is run: the
-// helper's paths are prefixed by DEBIAN_SETUP_APT_ROOT so every write lands in a
+// helper's paths are prefixed by DEBIAN_SETUP_ETC_ROOT so every write lands in a
 // scratch directory, the way DEBIAN_SETUP_MAP and DEBIAN_SETUP_OS_RELEASE work.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -38,7 +38,7 @@ const scenario = ({key = 'ok', candidate = '26.2.2', update = 0, pin = ''} = {})
     const result = spawnSync('bash', ['-c', probe], {
         encoding: 'utf8', timeout: 20000,
         env: {...process.env, HOME: home, PATH: `${bin}:/usr/bin:/bin`,
-            DEBIAN_SETUP_APT_ROOT: aptRoot},
+            DEBIAN_SETUP_ETC_ROOT: aptRoot},
     });
     return {result, aptRoot, log: fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '', home,
         sources: path.join(aptRoot, 'etc/apt/sources.list.d/dbeaver.list'),
@@ -106,7 +106,7 @@ const scenario = ({key = 'ok', candidate = '26.2.2', update = 0, pin = ''} = {})
         printf 'returned %s\\n' "$?"
     `;
     const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 20000,
-        env: {...process.env, HOME: home, PATH: '/usr/bin:/bin', DEBIAN_SETUP_APT_ROOT: aptRoot}});
+        env: {...process.env, HOME: home, PATH: '/usr/bin:/bin', DEBIAN_SETUP_ETC_ROOT: aptRoot}});
     assert.match(result.stdout, /returned 0/, result.stdout + result.stderr);
     assert.match(result.stdout, /example\.invalid/, 'A preview names the key and the sources line');
     assert.ok(!fs.existsSync(aptRoot), 'A preview creates nothing');

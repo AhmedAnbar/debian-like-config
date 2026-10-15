@@ -97,7 +97,7 @@ browser-files	teams	-	none	Microsoft retired the Linux client and its apt reposi
 chrome	google-chrome	-	none	Chrome exists only in Google apt repository, on both releases; setup-chrome.sh adds it with consent
 dbeaver	dbeaver-ce	-	none	Absent from both archives; setup-dbeaver.sh adds the vendor repository, which carries 26.2.2 for both releases
 onlyoffice	onlyoffice-bin	-	none	Not in Debian 13 or Ubuntu 26.04; setup-onlyoffice.sh adds the vendor repository, pinned, which carries 10.0.0
-dropbox	dropbox	-	none	The archive packages are the 2019 frontend; setup-dropbox.sh adds the vendor repository, which carries 2026.09.28
+dropbox	dropbox	-	none	Neither archive resolves this name to a version (their 2019 frontend is nautilus-dropbox), so a numeric candidate proves the vendor repository answered; it carries 2026.09.28
 dropbox	-	python3-gpg	both	Without it the Dropbox frontend announces it will not verify the proprietary daemon signature and skips the check
 docker	docker	docker.io	both	The apt fallback when the vendor repository cannot be reached; Debian ships no client inside it
 docker	-	docker-cli	debian	Debian docker.io only Recommends the client, so it must be named; Ubuntu bundles /usr/bin/docker in the package

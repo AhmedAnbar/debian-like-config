@@ -168,8 +168,20 @@ for (const file of ['config/sway/clipboard.sh', 'config/sway/session-start.sh'])
 }
 assert.match(fs.readFileSync(path.join(root, 'config/sway/session-start.sh'), 'utf8'),
     /polkit-mate-authentication-agent-1/, 'Debian 13 has no polkit-gnome agent');
-assert.doesNotMatch(fs.readFileSync(path.join(root, 'config/i3/config'), 'utf8'),
-    /conky\/start\.sh/, 'The i3 conky autostart moves to the phase that installs conky');
+// i3's configuration is one file that install.sh replaces whole, so the panel's two
+// lines have to be in it: there is no config.d to drop a fragment into. They are safe
+// for a user who never runs setup-conky.sh, because start.sh exits silently when conky
+// is not installed — which is also why phase 2 could leave them out until now.
+{
+    const i3 = fs.readFileSync(path.join(root, 'config/i3/config'), 'utf8');
+    assert.match(i3, /exec --no-startup-id sh ~\/\.config\/conky\/start\.sh/,
+        'The i3 session autostarts the panel, as the Arch configuration does');
+    assert.match(i3, /bindsym \$mod\+Shift\+t exec --no-startup-id sh ~\/\.config\/conky\/switch\.sh/,
+        'And binds the theme chooser');
+    assert.match(fs.readFileSync(path.join(root, 'config/conky/start.sh'), 'utf8'),
+        /command -v conky >\/dev\/null 2>&1 \|\| exit 0/,
+        'Which is only safe while start.sh is a no-op without conky');
+}
 
 // The Zenbook is recognized by DMI name and offered its own profile.
 {

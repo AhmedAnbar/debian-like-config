@@ -84,6 +84,40 @@ const install = (home, archive, version, expect = 'Postman/app/postman') => {
     fs.rmSync(home, {recursive: true, force: true});
 }
 
+// Both listing gates pass and the unpacking itself fails. Every caller invokes this
+// helper from a context where set -e is suspended (an if condition, or || true), so a
+// helper that ends in a printf would return 0 and tell the user an application is
+// installed when /opt holds nothing.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tarball-unwritable-'));
+    const archive = fixture(home);
+    const bin = path.join(home, 'bin');
+    fs.mkdirSync(bin, {recursive: true});
+    fs.writeFileSync(path.join(bin, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const desktop = path.join(home, 'Postman.desktop');
+    fs.writeFileSync(desktop, '[Desktop Entry]\n');
+    // A regular file where the install root's parent directory has to be: install -d
+    // cannot create a directory under it, so the first mutating command fails.
+    fs.writeFileSync(path.join(home, 'blocked'), 'not a directory\n');
+    const probe = `
+        dry_run=false; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        install_tarball_app postman ${archive} 12.32.3 'Postman/app/postman' ${desktop}
+        printf 'returned %s\\n' "$?"
+        printf 'failed: %s\\n' "${'$'}{failed[*]:-none}"
+    `;
+    const result = spawnSync('bash', ['-c', probe], {encoding: 'utf8', timeout: 20000,
+        env: {...process.env, HOME: home, PATH: `${bin}:/usr/bin:/bin`,
+            DEBIAN_SETUP_OPT_ROOT: path.join(home, 'blocked', 'opt'),
+            DEBIAN_SETUP_SHARE_ROOT: path.join(home, 'share')}});
+    assert.doesNotMatch(result.stdout, /returned 0/,
+        'A failed unpacking must not return success');
+    assert.doesNotMatch(result.stdout, /is installed/,
+        'Nothing was unpacked, so nothing may be announced as installed');
+    assert.match(result.stdout, /failed: .*postman/, 'The failure is recorded for the summary');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+
 // A preview unpacks nothing.
 {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tarball-dry-'));

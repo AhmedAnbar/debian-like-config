@@ -65,6 +65,10 @@ exec --no-startup-id nm-applet
 # Bluetooth tray applet for pairing and connecting headphones.
 exec --no-startup-id blueman-applet
 
+# Conky system panel (no-op until conky is installed); Alt+Shift+T picks a theme or Off.
+exec --no-startup-id sh ~/.config/conky/start.sh
+bindsym $mod+Shift+t exec --no-startup-id sh ~/.config/conky/switch.sh
+
 
 # Internal HiDPI display: use a comfortable 16:10 resolution.
 # Optional laptop resolution: configure with xrandr for your own display.
