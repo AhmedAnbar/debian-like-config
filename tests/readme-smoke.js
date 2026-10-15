@@ -64,4 +64,33 @@ assert.match(readme, /install\.sh`?\s+never\s+ran/i,
 assert.match(readme, /not been run on a real Debian|confirmed on the machine|cannot show/i,
     'Say what a container test does not prove');
 
+// Phases 3 and 4 document themselves: a script a user is never told about is a script
+// that does not exist to them.
+assert.match(readme, /^## Third-party applications$/m, 'Phase 3 documents its own section');
+assert.match(readme, /^## System extras$/m, 'And phase 4 its own');
+for (const script of ['setup-chrome.sh', 'setup-dbeaver.sh', 'setup-onlyoffice.sh',
+    'setup-dropbox.sh', 'setup-docker.sh', 'setup-postman.sh', 'setup-tor-browser.sh',
+    'setup-conky.sh', 'setup-zram.sh', 'setup-snapshots.sh', 'setup-hardening.sh']) {
+    assert.ok(readme.includes(script), `The README must name ${script}`);
+}
+// The decisions and caveats a user cannot discover by reading the package list.
+assert.match(readme, /teams\.microsoft\.com/,
+    'Teams is not installed, so name the web client that replaces it');
+assert.match(readme, /no checksum|neither a checksum|without a checksum/i,
+    "Postman's missing integrity material is the user's risk to accept");
+assert.match(readme, /root-equivalent|equivalent to root/i,
+    'Docker group membership is root-equivalent, and the README must say so');
+assert.match(readme, /dropbox start -i/, 'Dropbox needs one manual first run');
+assert.match(readme, /btrfs/i, 'Snapshots need a btrfs root, which not every install has');
+assert.match(readme, /Host vps/, 'Tor Browser is staged over an ssh alias the user defines');
+// The relay is named by alias and nothing else, here as everywhere in this repository.
+assert.doesNotMatch(readme, /\b(?:\d{1,3}\.){3}\d{1,3}\b/,
+    'No address for the staging host may appear in this repository');
+assert.match(readme, /password authentication|PasswordAuthentication/i,
+    'Say what SSH hardening changes before a user runs it');
+// The forward-looking list cannot still promise work that now exists.
+const later = readme.slice(readme.indexOf('## What comes later'));
+assert.doesNotMatch(later, /Still to come[\s\S]{0,400}Postman/,
+    'Phases 3 and 4 are no longer "still to come"');
+
 console.log('readme-smoke: all checks passed');

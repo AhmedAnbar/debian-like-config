@@ -137,7 +137,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | — | `google-chrome` | none | Chrome exists only in Google apt repository, on both releases; setup-chrome.sh adds it with consent |
 | — | `dbeaver-ce` | none | Absent from both archives; setup-dbeaver.sh adds the vendor repository, which carries 26.2.2 for both releases |
 | — | `onlyoffice-bin` | none | Not in Debian 13 or Ubuntu 26.04; setup-onlyoffice.sh adds the vendor repository, pinned, which carries 10.0.0 |
-| — | `dropbox` | none | The archive packages are the 2019 frontend; setup-dropbox.sh adds the vendor repository, which carries 2026.09.28 |
+| — | `dropbox` | none | Neither archive resolves this name to a version (their 2019 frontend is nautilus-dropbox), so a numeric candidate proves the vendor repository answered; it carries 2026.09.28 |
 | `python3-gpg` | — | both | Without it the Dropbox frontend announces it will not verify the proprietary daemon signature and skips the check |
 | `docker.io` | `docker` | both | The apt fallback when the vendor repository cannot be reached; Debian ships no client inside it |
 | `docker-cli` | — | debian | Debian docker.io only Recommends the client, so it must be named; Ubuntu bundles /usr/bin/docker in the package |
@@ -238,6 +238,111 @@ show that the session renders, that the touchscreen mapping works, or that the
 fonts look right: those are confirmed on the machine, and this README will say
 so when they have been.
 
+## Third-party applications
+
+Five applications that neither release packages, each its own script, each asked
+about at the end of `install.sh` and declined by default. Every one of them adds a
+vendor apt repository the same way: the signing key is fetched **before** any
+sources file is written, the repository gets its own `apt-get update`, and the
+verdict is whether `apt-cache policy` then offers a numeric candidate — not the
+exit status, because `apt-get update` exits 0 when a vendor host is unreachable. A
+repository that cannot be verified is removed again, key and pin included, so a
+vendor outage leaves the machine exactly as it was.
+
+```bash
+bash setup-chrome.sh        # google-chrome-stable, from dl.google.com
+bash setup-dbeaver.sh       # dbeaver-ce, from dbeaver.io's flat repository
+bash setup-onlyoffice.sh    # onlyoffice-desktopeditors, a 279 MB download
+bash setup-dropbox.sh       # the Dropbox frontend, from linux.dropbox.com
+bash setup-docker.sh        # Docker Engine, compose, the docker group, lazydocker
+bash setup-postman.sh       # Postman, from the vendor tarball, into /opt
+```
+
+Each takes `--dry-run`, which shows every step and writes nothing.
+
+What is worth knowing before you run them:
+
+- **Chrome** does not replace Chromium. On Debian `install.sh` already installed
+  `chromium` with the browser group; on Ubuntu there is no `chromium` package at
+  all, only a snap stub. Chrome's own postinst re-creates its sources file and an
+  `/etc/cron.daily/google-chrome` that puts it back if you delete it by hand.
+- **Dropbox** installs a 62 KB frontend. The sync client is a proprietary daemon of
+  about 91 MB that Dropbox fetches outside apt, into your home directory, the first
+  time you start it: run `dropbox start -i` once from a desktop session afterwards.
+  The script never downloads or starts it, because with stdin closed that command
+  dies with `EOFError` and still exits 0 — a failure nothing could detect.
+- **Docker** adds you to the `docker` group, and that is
+  **root-equivalent**: any member can start a container that mounts the whole
+  filesystem as root. It takes effect at your next login, not in the shell that ran
+  the script. If `docker.io` is already installed, the vendor route is skipped
+  rather than forced, because `docker-ce` declares `Conflicts: docker.io`.
+- **Postman** publishes **no checksum and no signature** — every `.sha256` and
+  `SHASUMS` path returns 400. The only integrity gate available is that the
+  downloaded archive lists cleanly and contains `Postman/app/postman`, which is
+  checked before anything under `/opt` is touched. Accept that or skip the script.
+- **Teams is not installed.** Microsoft's own `packages.microsoft.com/repos/ms-teams`
+  is deliberately empty: a 0-byte `Packages` index, a `Release` file from
+  2023-02-28, and a pool that 404s. The unofficial `teams-for-linux` exists but is
+  not Microsoft's. Use <https://teams.microsoft.com> in a browser, which is what
+  Microsoft supports on Linux.
+
+## System extras
+
+Five system features rather than applications. The same rules apply: every step
+asks, declines by default, and `--dry-run` previews.
+
+```bash
+bash setup-tor-browser.sh   # from a signed tarball you stage yourself
+bash setup-conky.sh         # the system panel, for both i3 and Sway
+bash setup-zram.sh          # zram swap through systemd-zram-generator
+bash setup-snapshots.sh     # btrbk on a timer, snapper separately
+bash setup-hardening.sh     # SSH, last and loudest
+```
+
+- **Tor Browser** is never downloaded here: `dist.torproject.org` is unreachable
+  from this machine, so the tarball and its `.asc` are staged from somewhere that
+  can reach it. The script names exactly one ssh alias, `vps`, and nothing else —
+  no host, user, port or address appears anywhere in this repository. Write the
+  block yourself before using it, and check that `ssh vps true` works:
+
+  ```
+  Host vps
+      HostName <your machine>
+      User <your login>
+      Port <your ssh port>
+      IdentityFile ~/.ssh/<your key>
+  ```
+
+  `--from-dir <dir>` verifies and installs files you already have, with no network
+  at any point. Either way the signature is checked against
+  `EF6E286DDA85EA2A4BA7DE684E2C6E8793298290` before anything is unpacked, and a
+  failed signature stops that step instead of falling through to extraction.
+  `torbrowser-launcher` is deliberately not used: Debian's bundled key expired on
+  2025-07-21, Ubuntu's signing subkey expires on 2026-10-26, and it cannot be fed
+  from disk.
+- **conky** installs the panel for both sessions. `Alt+Shift+T` picks a theme or
+  turns it off. The i3 autostart is part of `config/i3/config`, and the Sway
+  fragment is installed as `~/.config/sway/config.d/30-conky.conf`. The panel is a
+  no-op until conky itself is installed, which is why the autostart is harmless on
+  a machine that never ran this script.
+- **zram** only ever raises a cap: `systemd-zram-generator` already ships an active
+  default of `min(ram / 2, 4096)` MB, so the script writes
+  `/etc/systemd/zram-generator.conf` with `min(ram / 2, 8192)` and nothing else.
+  When half this machine's RAM is already under the shipped cap it writes nothing
+  and says so, rather than restating the default and calling it a change.
+- **Snapshots need a btrfs root.** `findmnt -no FSTYPE /` runs before anything else,
+  and anything that is not btrfs — including an absent or silent `findmnt` — stops
+  the script with an explanation instead of configuring a tool that cannot work.
+  btrbk is the default; snapper is a separate, louder opt-in because its
+  `/etc/apt/apt.conf.d/80snapper` takes a snapshot around **every** apt run.
+  `timeshift` is not offered: it refuses any layout but Ubuntu's `@` and `@home`.
+- **SSH hardening** is the only script here that changes how you can log in to this
+  machine, which is why `install.sh` offers it last. It stages the drop-in,
+  validates it with `sshd -t` before installing it, and **refuses to set
+  `PasswordAuthentication no` until you have confirmed that a key login actually
+  worked** — it asks you to try one in another terminal first. Nothing is
+  restarted without being asked.
+
 ## Backups and undo
 
 Every replaced file is copied to `~/.local/state/debian-desktop-setup/<timestamp>-<pid>/`
@@ -245,12 +350,19 @@ with its path preserved, so restoring one is a `cp` back.
 
 ## What comes later
 
-Phases 1 and 2 cover the i3 desktop, the shell, the editor and the Sway
-session. Still to come, each with its own design document under
-`docs/superpowers/specs/`:
+All four phases are here: the i3 desktop and the shell, the Sway session, the
+third-party applications, and the system extras. Each has its design document
+under `docs/superpowers/specs/`, and the evidence behind every package name,
+repository URL, suite and version is in
+`docs/superpowers/specs/2026-10-15-phase-3-4-recon.md`.
 
-1. Third-party applications: Chrome, DBeaver, Teams, Dropbox, OnlyOffice,
-   Postman, and Tor Browser fetched through a VPS. `snapd` is already installed,
-   so each application chooses between a snap and a vendor apt repository.
-2. System extras: Docker, SSH hardening, conky, zram and snapshots. The conky
-   panel fragments for both i3 and Sway arrive here.
+What a container cannot prove is what is left, and none of it is code:
+
+- No application here has been **started**. The container tests prove that the
+  right packages resolve, that the repositories verify, and that nothing is
+  written outside a scratch directory — not that Chrome renders, that ONLYOFFICE
+  shapes Arabic, or that the Dropbox daemon links an account.
+- zram, the snapshot timers and the SSH restart need a **reboot or a new session**
+  to show. `systemd-zram-generator` refuses to run in a container at all
+  ("Running in a container, exiting").
+- Every version in this README is a snapshot taken on 2026-10-15.
