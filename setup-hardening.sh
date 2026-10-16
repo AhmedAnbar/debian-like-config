@@ -186,11 +186,17 @@ if ask "Stage, validate and install $dropin?"; then
                         printf '\nWhat sshd reports as effective now:\n'
                         while IFS= read -r setting; do
                             printf '  %s\n' "$setting"
-                        done < <(printf '%s\n' "$effective" | grep -E \
+                        # Case-insensitively, because the spelling changed: OpenSSH 9
+                        # lowercases every keyword in sshd -T output and OpenSSH 10
+                        # prints it in CamelCase. Debian 13 ships 9.9 and kali-rolling
+                        # 10.5p1, so a match on one spelling alone reads an empty
+                        # result on half the machines this installer supports -- and an
+                        # empty result here looks exactly like success.
+                        done < <(printf '%s\n' "$effective" | grep -iE \
                             '^(passwordauthentication|permitrootlogin|kbdinteractiveauthentication|x11forwarding) ' \
                             || true)
                         if "$want_no_password" \
-                            && printf '%s\n' "$effective" | grep -qx 'passwordauthentication yes'; then
+                            && printf '%s\n' "$effective" | grep -qix 'passwordauthentication yes'; then
                             printf 'PasswordAuthentication no did not take effect: this machine still accepts\n' >&2
                             printf 'passwords. Another drop-in sets it first, and sshd keeps the first value.\n' >&2
                             if (( ${#other_names[@]} )); then

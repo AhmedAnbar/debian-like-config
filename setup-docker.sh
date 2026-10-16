@@ -36,6 +36,20 @@ case "$release" in
     debian) vendor_suite=trixie; fallback_version='26.1.5+dfsg1-9+deb13u1' ;;
     ubuntu) vendor_suite=resolute; fallback_version='29.1.3-0ubuntu4.1' ;;
 esac
+# A derivative shares the parent's vendor suite -- that is what release means here, and
+# kali-rolling resolves docker-ce from linux/debian trixie -- but not the parent's
+# archive, which is a release behind or ahead. Debian 13 has docker.io 26.1.5 and
+# kali-rolling 28.5.2, so on a derivative the figure comes from apt rather than from
+# the line above. Guarded and defaulted: apt-cache is missing in a minimal container,
+# and a bare command substitution here would abort the run before the summary exists.
+if [[ "$variant" != "$release" ]]; then
+    archive_version=$(apt-cache policy -- docker.io 2>/dev/null \
+        | awk '/Candidate:/ { print $2; exit }' || true)
+    case "$archive_version" in
+        ''|'(none)') fallback_version="the version $family packages, which apt here does not report" ;;
+        *) fallback_version=$archive_version ;;
+    esac
+fi
 # Guarded, and before the ERR trap has anything to report into: a bare command
 # substitution here aborts the script with "stopped at line 0" and no summary, which
 # is worse than any outcome it could report. amd64 is the architecture this phase

@@ -27,6 +27,7 @@ const borrow = (dir, commands) => {
 const scenario = ({
     release = 'debian',
     candidate = '5:29.9.1',
+    dockerIoCandidate = '28.5.2+dfsg4-5',
     dockerIo = false,
     download = 'tarball',
     answers = 'y\n'.repeat(40),
@@ -91,9 +92,15 @@ exit 0
     // The version table is part of the stub because add_vendor_repo checks where the
     // candidate comes from, not just that there is one: apt reports a candidate for any
     // installed package out of /var/lib/dpkg/status with no repository at all.
-    fs.writeFileSync(path.join(bin, 'apt-cache'), candidate
-        ? `#!/bin/sh\nprintf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'\nprintf '     ${candidate} 500\\n        500 https://download.docker.com/linux/debian trixie/stable amd64 Packages\\n'\n`
-        : '#!/bin/sh\nprintf \'  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n\'\n', {mode: 0o755});
+    // Per package, because the archive's docker.io and the vendor's docker-ce are two
+    // different answers and a derivative's run reads the first one.
+    const vendorReply = candidate
+        ? `printf '  Installed: (none)\\n  Candidate: ${candidate}\\n  Version table:\\n'\n`
+            + `printf '     ${candidate} 500\\n        500 https://download.docker.com/linux/debian trixie/stable amd64 Packages\\n'`
+        : `printf '  Installed: (none)\\n  Candidate: (none)\\n  Version table:\\n'`;
+    fs.writeFileSync(path.join(bin, 'apt-cache'),
+        `#!/bin/sh\ncase "$*" in\n  *docker.io*) printf '  Installed: (none)\\n  Candidate: ${dockerIoCandidate}\\n' ;;\n`
+        + `  *) ${vendorReply} ;;\nesac\n`, {mode: 0o755});
     if (dpkg) {
         fs.writeFileSync(path.join(bin, 'dpkg'), '#!/bin/sh\nprintf \'amd64\\n\'\n', {mode: 0o755});
     }
@@ -105,6 +112,7 @@ exit 0
         debian: 'ID=debian\nPRETTY_NAME="Debian GNU/Linux 13 (trixie)"\n',
         ubuntu: 'ID=ubuntu\nID_LIKE=debian\nPRETTY_NAME="Ubuntu 26.04.1 LTS"\n',
         fedora: 'ID=fedora\nPRETTY_NAME="Fedora Linux 44"\n',
+        kali: 'ID=kali\nID_LIKE=debian\nVERSION_CODENAME=kali-rolling\nPRETTY_NAME="Kali GNU/Linux Rolling"\n',
     };
     const osRelease = path.join(base, `os-release-${release}`);
     fs.writeFileSync(osRelease, releases[release]);
@@ -325,6 +333,30 @@ const done = (s) => fs.rmSync(s.base, {recursive: true, force: true});
     assert.ok(!fs.existsSync(s.lazydocker), 'An unverified architecture installs nothing');
     assert.doesNotMatch(s.log, /github\.com/, 'And fetches nothing');
     assert.match(s.result.stdout + s.result.stderr, /aarch64/, 'Name what the machine reported');
+    done(s);
+}
+
+// Kali takes the Debian side of both routes -- the vendor suite is trixie, verified
+// against kali-rolling -- but not Debian's archive version: kali-rolling carries
+// docker.io 28.5.2 where Debian 13 has 26.1.5, and a run that printed the parent's
+// figure would be telling the user about a package their machine does not have.
+{
+    const s = scenario({release: 'kali', answers: 'n\n'.repeat(40)});
+    assert.equal(s.result.status, 0, s.result.stderr);
+    const out = s.result.stdout;
+    assert.match(out, /\(Kali family\)/, 'Kali is named as itself');
+    assert.match(out, /linux\/debian trixie/, 'The vendor route stays on the Debian suite');
+    assert.match(out, /docker\.io 28\.5\.2\+dfsg4-5/, 'The archive version is the one apt reports here');
+    assert.doesNotMatch(out, /26\.1\.5/, "and never Debian 13's figure");
+    done(s);
+}
+
+// On Debian itself the figure is the verified literal, with no apt-cache call needed
+// for it: the derivative path must not become the ordinary one.
+{
+    const s = scenario({answers: 'n\n'.repeat(40)});
+    assert.match(s.result.stdout, /docker\.io 26\.1\.5\+dfsg1-9\+deb13u1/, 'Debian keeps its verified figure');
+    assert.doesNotMatch(s.result.stdout, /28\.5\.2/, 'and is told nothing about another archive');
     done(s);
 }
 

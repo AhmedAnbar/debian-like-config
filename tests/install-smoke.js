@@ -33,6 +33,10 @@ const install = (args, file, answers = 'n\n'.repeat(60)) =>
 
 const debian = osRelease('ID=debian\nVERSION_CODENAME=trixie\nPRETTY_NAME="Debian GNU/Linux 13 (trixie)"\n', 'debian');
 const ubuntu = osRelease('ID=ubuntu\nVERSION_CODENAME=resolute\nPRETTY_NAME="Ubuntu 26.04.1 LTS"\n', 'ubuntu');
+// Kali's own os-release: ID=kali with ID_LIKE=debian, which is how detect_release
+// reaches the Debian side of every version decision while staying Kali for the
+// package names and the messages.
+const kali = osRelease('ID=kali\nID_LIKE=debian\nVERSION_CODENAME=kali-rolling\nPRETTY_NAME="Kali GNU/Linux Rolling"\n', 'kali');
 
 // Arguments.
 assert.equal(install(['--invalid'], debian).status, 2, 'An unknown argument is a usage error');
@@ -43,6 +47,7 @@ const fedora = install(['--dry-run'], osRelease('ID=fedora\nID_LIKE=rhel\n', 'fe
 assert.equal(fedora.status, 1);
 assert.match(fedora.stderr, /Debian/);
 assert.match(fedora.stderr, /Ubuntu/);
+assert.match(fedora.stderr, /Kali/, 'Everything the installer supports is named where it refuses');
 const absent = install(['--dry-run'], path.join(scratch, 'does-not-exist'));
 assert.equal(absent.status, 1);
 assert.match(absent.stderr, /os-release|distribution is unknown/);
@@ -61,7 +66,7 @@ for (const [file, family] of cases) {
 
 // A preview writes nothing at all.
 assert.deepEqual(fs.readdirSync(scratch).sort(),
-    ['bin', 'debian', 'fedora', 'idless', 'mint', 'ubuntu'], 'A preview must not create files');
+    ['bin', 'debian', 'fedora', 'idless', 'kali', 'mint', 'ubuntu'], 'A preview must not create files');
 
 // Package groups come from the map, and the map's gaps must be visible.
 const accept = 'y\n'.repeat(60);
@@ -77,6 +82,28 @@ assert.match(selected(debianPreview), /\bfirefox-esr\b/);
 assert.doesNotMatch(selected(debianPreview), /\bfirefox(?!-esr)\b/, 'Debian has no apt firefox');
 assert.match(selected(ubuntuPreview), /\bfirefox\b/, 'Ubuntu installs Firefox through its snap-installing apt package');
 assert.doesNotMatch(selected(ubuntuPreview), /\bfirefox-esr\b/, 'Ubuntu has no firefox-esr');
+// Kali is Debian's archive under another name, with two packages it does not carry.
+// detect_release keeps it on the Debian side of every version decision -- the vendor
+// suites and repository paths are Debian's, proved against kali-rolling in a container
+// -- while the map's kali rows replace the two names kali-rolling has no candidate for.
+{
+    const kaliPreview = install(['--dry-run'], kali, accept);
+    assert.equal(kaliPreview.status, 0, kaliPreview.stderr);
+    assert.match(kaliPreview.stdout, /\(Kali family\)/, 'Kali is named as itself, not as Debian');
+    assert.match(selected(kaliPreview), /\bnetwork-manager-applet\b/,
+        'Kali carries the applet under its own name');
+    assert.doesNotMatch(selected(kaliPreview), /\bnetwork-manager-gnome\b/,
+        'and not under the Debian name, which has no candidate in kali-rolling');
+    assert.match(kaliPreview.stdout, /Not packaged on Kali:[^\n]*github-cli/,
+        'gh is in no Kali component, so it is named as missing instead of failing the whole install');
+    assert.doesNotMatch(selected(kaliPreview), /\bgh\b/, 'and never selected');
+    // And the parent is untouched by rows written for the derivative.
+    assert.match(selected(debianPreview), /\bnetwork-manager-gnome\b/, 'Debian keeps its own name');
+    assert.match(selected(debianPreview), /\bgh\b/, 'and its own GitHub CLI');
+    assert.doesNotMatch(debianPreview.stdout, /Skipped on Debian:[^\n]*network-manager-applet/,
+        'A row written for a derivative must not surface as a skip on the parent');
+}
+
 // snapd goes on both: Ubuntu needs it for the browser, Debian for phase 3.
 for (const preview of [debianPreview, ubuntuPreview]) {
     assert.match(selected(preview), /\bsnapd\b/, 'snapd is offered on both releases');

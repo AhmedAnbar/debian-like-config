@@ -13,12 +13,16 @@ require_normal_user() {
     fi
 }
 require_apt_get() {
-    command -v apt-get >/dev/null || { printf 'This installer requires apt-get: Debian or Ubuntu.\n' >&2; exit 1; }
+    command -v apt-get >/dev/null || { printf 'This installer requires apt-get: Debian, Ubuntu, or a derivative of either.\n' >&2; exit 1; }
 }
-# Sets release, family and distro_name. os-release is shell syntax, so it is read
-# in subshells: a stray variable in that file must not become one of ours.
+# Sets release, variant, family and distro_name. release is the archive whose names,
+# suites and versions apply; variant is the distribution actually running, which the
+# map's own rows key on. They differ only for a derivative that needs rows of its own.
+# os-release is shell syntax, so it is read in subshells: a stray variable in that
+# file must not become one of ours.
 detect_release() {
     local os_release=$1 distro_id distro_like
+    variant=
     [[ -r "$os_release" ]] || { printf 'Cannot read %s, so the distribution is unknown.\n' "$os_release" >&2; exit 1; }
     distro_id=$(. "$os_release" >/dev/null 2>&1; printf '%s' "${ID:-}")
     distro_like=$(. "$os_release" >/dev/null 2>&1; printf '%s' "${ID_LIKE:-}")
@@ -27,14 +31,22 @@ detect_release() {
     case "$distro_id" in
         debian) release=debian family=Debian ;;
         ubuntu) release=ubuntu family=Ubuntu ;;
+        # Kali is Debian's archive a suite ahead, and it renames or drops a couple of
+        # the names this map resolves. release stays debian because every version
+        # decision here -- the vendor suites, the repository paths, the figures the
+        # scripts print -- is Debian's, and all five repositories were verified against
+        # kali-rolling. variant is what the map's kali rows key on. A derivative with
+        # no rows of its own needs nothing here: ID_LIKE already places it.
+        kali) release=debian family=Kali variant=kali ;;
         *)  case " $distro_like " in
                 *" ubuntu "*) release=ubuntu family=Ubuntu ;;
                 *" debian "*) release=debian family=Debian ;;
                 *)  printf 'Unsupported distribution: %s.\n' "$distro_id" >&2
-                    printf 'This installer supports Debian 13 and Ubuntu 26.04, and derivatives that name one of them in ID_LIKE.\n' >&2
+                    printf 'This installer supports Debian 13 and Ubuntu 26.04, Kali Rolling, and derivatives that name one of those families in ID_LIKE.\n' >&2
                     exit 1 ;;
             esac ;;
     esac
+    variant=${variant:-$release}
 }
 # Test seams, as DEBIAN_SETUP_MAP and DEBIAN_SETUP_OS_RELEASE are elsewhere, so a
 # test can exercise these without a root filesystem of its own. etc_root prefixes
@@ -236,18 +248,36 @@ map_named_packages() {
     mapfile -t _mnp_out < <(printf '%s\n' "${list[@]}" | sort -u)
 }
 # Usage: map_group_packages <map> <group> <release> <array name>
+# The release argument says which archive's names to take. The global variant, set by
+# detect_release, says which distribution is running; where they differ, a row whose
+# where column names the variant replaces the parent's row for the same Arch package,
+# so a derivative's rename or gap is stated once, beside the name it replaces. Such a
+# row is invisible on the parent -- it is not a skip, it is another distribution's
+# business -- and one carrying "-" means the derivative has no equivalent at all.
 map_group_packages() {
     local map=$1 id=$2 want=$3 g arch apt where note
     local -n _mgp_out=$4
+    local use=${variant:-$want}
     local list=()
+    local -A override=()
     _mgp_out=()
+    # One pass to learn which Arch packages this distribution answers for itself, so
+    # the second pass can leave the parent's row alone rather than offering both.
+    if [[ "$use" != "$want" ]]; then
+        while IFS=$'\t' read -r g arch apt where note; do
+            [[ "$g" == "$id" && "$where" == "$use" && "$arch" != - ]] || continue
+            override[$arch]=$apt
+        done < <(tail -n +2 -- "$map")
+    fi
     while IFS=$'\t' read -r g arch apt where note; do
         [[ "$g" == "$id" ]] || continue
+        [[ "$where" == "$use" || ! -v override[$arch] ]] || continue
         case "$where" in
             none) unavailable+=("$arch ($note)") ;;
-            both) list+=("$apt") ;;
-            "$want") list+=("$apt") ;;
-            *) skipped+=("$apt ($note)") ;;
+            both|"$want") list+=("$apt") ;;
+            "$use") if [[ "$apt" == - ]]; then unavailable+=("$arch ($note)"); else list+=("$apt"); fi ;;
+            debian|ubuntu) skipped+=("$apt ($note)") ;;
+            *) ;;
         esac
     done < <(tail -n +2 -- "$map")
     (( ${#list[@]} )) || return 0

@@ -10,7 +10,13 @@ assert.equal(lines[0], ['group', 'arch', 'apt', 'where', 'note'].join('\t'), 'He
 const groups = new Set(['core-desktop', 'audio', 'input-emoji', 'browser-files', 'dev', 'shell',
     'editor-tools', 'sway', 'chrome', 'dbeaver', 'onlyoffice', 'dropbox', 'docker', 'postman',
     'tor', 'conky-panel', 'zram', 'snapshots', 'hardening']);
-const places = new Set(['both', 'debian', 'ubuntu', 'none']);
+// A derivative's where value names one distribution rather than an archive: its row
+// replaces the parent's row for the same Arch package, and is invisible everywhere
+// else. Kali is the only one so far, and the rules below keep it honest -- an override
+// with nothing to override is a row nothing will ever read.
+const parents = new Set(['both', 'debian', 'ubuntu', 'none']);
+const derivatives = new Set(['kali']);
+const places = new Set([...parents, ...derivatives]);
 const archSeen = new Set();
 let none = 0;
 for (const line of lines.slice(1)) {
@@ -29,17 +35,31 @@ for (const line of lines.slice(1)) {
             archSeen.add(key);
         }
     }
-    if (where === 'none') {
-        none++;
-        assert.equal(apt, '-', 'An unavailable package has no apt name: ' + line);
-        assert.ok(note.length > 20, 'An unavailable package must name its replacement: ' + line);
+    if (where === 'none') none++;
+    if (apt === '-') {
+        assert.ok(where === 'none' || derivatives.has(where),
+            'Only an unavailable package, or one a derivative lacks, has no apt name: ' + line);
+        assert.ok(note.length > 20, 'A missing package must name what covers it instead: ' + line);
     } else {
         assert.match(apt, /^[a-z0-9][a-z0-9.+-]*$/, 'Not a Debian package name: ' + line);
+    }
+    if (derivatives.has(where)) {
+        assert.notEqual(arch, '-', 'A derivative row overrides a named package: ' + line);
     }
     if (arch !== apt || where !== 'both') {
         assert.ok(note.length > 10, 'Every difference needs a reason: ' + line);
     }
 }
+// An override must override something: a derivative row whose group and Arch package
+// match no parent row is read by nothing, because map_group_packages only ever reaches
+// it through the parent row it supersedes. This is the rule that catches a typo in the
+// one column no release of Debian or Ubuntu exercises.
+const rows = lines.slice(1).map((l) => l.split('\t'));
+for (const [group, arch, , where] of rows.filter(([, , , w]) => derivatives.has(w))) {
+    const parent = rows.find(([g, a, , w]) => g === group && a === arch && parents.has(w) && w !== 'none');
+    assert.ok(parent, `${where} overrides ${arch} in ${group}, but no parent row offers it`);
+}
+
 // Every unavailable package is named here, not counted: a new one is a decision about
 // what this repository will and will not install, and it belongs in a spec before it
 // belongs in the map. Each needs a note saying which script, or which other route,

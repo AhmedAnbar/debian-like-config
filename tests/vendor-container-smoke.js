@@ -88,7 +88,11 @@ printf 'FAILED-STEPS %s\\n' "\${failed[*]:-none}"
 // The suite each vendor publishes for this release, proved in the recon: a codename
 // the vendor does not carry gives a repository that verifies and offers nothing.
 for (const [image, release, suite] of [['debian:trixie', 'debian', 'trixie'],
-    ['ubuntu:26.04', 'ubuntu', 'resolute']]) {
+    ['ubuntu:26.04', 'ubuntu', 'resolute'],
+    // Kali passes Debian's own release and suite, because that is what detect_release
+    // resolves it to and therefore what the scripts send: this run is what makes the
+    // README's claim about Kali an observation rather than an assumption.
+    ['kalilinux/kali-rolling', 'debian', 'trixie']]) {
     const result = spawnSync('docker', ['run', '--rm', '-v', `${root}:/bundle:ro`,
         image, 'bash', '-c', script(release, suite)], {encoding: 'utf8', timeout: 2400000});
     const output = `${result.stdout}\n${result.stderr}`;

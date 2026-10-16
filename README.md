@@ -10,6 +10,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-b4befe" alt="License: GPL-3.0"></a>
   <img src="https://img.shields.io/badge/OS-Debian_13-A80030?logo=debian&amp;logoColor=white" alt="Debian 13">
   <img src="https://img.shields.io/badge/OS-Ubuntu_26.04-E95420?logo=ubuntu&amp;logoColor=white" alt="Ubuntu 26.04">
+  <img src="https://img.shields.io/badge/OS-Kali_Rolling-367BF0?logo=kalilinux&amp;logoColor=white" alt="Kali Rolling">
   <img src="https://img.shields.io/badge/Desktop-i3-313244?logo=i3&amp;logoColor=white" alt="i3 desktop">
   <img src="https://img.shields.io/badge/Shell-Zsh-a6e3a1?logo=zsh&amp;logoColor=313244" alt="Zsh">
 </p>
@@ -17,14 +18,28 @@
 This is the Debian-family sibling of [arch-desktop-setup](https://github.com/AhmedAnbar/arch-linux-config):
 the same desktop, the same keys, installed with apt instead of pacman.
 
-Verified on **Debian 13 (trixie)** and **Ubuntu 26.04.1 LTS**. Other apt-based
-distributions are accepted when their `ID_LIKE` names one of those families, but
-are untested.
+Verified on **Debian 13 (trixie)**, **Ubuntu 26.04.1 LTS** and **Kali Rolling**.
+Other apt-based distributions are accepted when their `ID_LIKE` names one of those
+families, but are untested.
+
+Kali is Debian's archive one suite ahead, so it takes the Debian side of every
+version decision: all five vendor repositories were checked against a
+`kalilinux/kali-rolling` container, and `docker-ce` there resolves from
+`linux/debian trixie` like any other Debian machine. Two package names differ, and
+the map carries both as `kali` rows — `network-manager-applet` keeps its own name
+there, and `gh` is in no Kali component, so the installer names it as missing
+instead of failing the whole transaction on an unknown package. Two things to
+expect: a stock Kali root is ext4, so `setup-snapshots.sh` will decline and explain
+itself; and `setup-hardening.sh` installs **and starts** `openssh-server`, which
+Kali ships deliberately disabled. Kali's OpenSSH is 10.5p1, which prints the
+keywords of `sshd -T` in CamelCase where Debian 13's 9.9 lowercases them, so the
+hardening script reads its effective configuration back case-insensitively — a
+case-sensitive match would find nothing there and call that success.
 
 ## Get started
 
 ```sh
-git clone https://github.com/AhmedAnbar/debian-linux-config.git ~/debian-desktop-setup
+git clone https://github.com/AhmedAnbar/debian-like-config.git ~/debian-desktop-setup
 cd ~/debian-desktop-setup
 bash install.sh --dry-run   # preview every command first
 bash install.sh
@@ -35,7 +50,7 @@ backed up under `~/.local/state/debian-desktop-setup/`.
 
 ## Package catalogue
 
-Every package the installer can offer, generated from `packages/apt-map.tsv`. `Releases` says where the package exists: `both`, `debian`, `ubuntu`, or `none` when apt has no such package.
+Every package the installer can offer, generated from `packages/apt-map.tsv`. `Releases` says where the package exists: `both`, `debian`, `ubuntu`, `none` when apt has no such package, or `kali` for a row that replaces the Debian name on Kali alone.
 
 | Package | Arch counterpart | Releases | Notes |
 | --- | --- | --- | --- |
@@ -57,6 +72,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `xss-lock` | `xss-lock` | both |  |
 | `network-manager` | `networkmanager` | both | Debian spells the NetworkManager package with a hyphen |
 | `network-manager-gnome` | `network-manager-applet` | both | nm-applet ships in network-manager-gnome |
+| `network-manager-applet` | `network-manager-applet` | kali | kali-rolling offers no network-manager-gnome candidate; there the applet keeps its own name |
 | `bluez` | `bluez` | both |  |
 | `bluez` | `bluez-utils` | both | bluetoothctl ships in bluez itself; Debian has no separate utils package |
 | `blueman` | `blueman` | both |  |
@@ -90,6 +106,7 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `build-essential` | `base-devel` | both | build-essential is the Debian equivalent metapackage |
 | `git` | `git` | both |  |
 | `gh` | `github-cli` | both | Debian and Ubuntu both package the GitHub CLI as gh |
+| — | `github-cli` | kali | No Kali component carries gh; GitHub publishes its own apt repository for it |
 | `vim` | `vim` | both |  |
 | `neovim` | `neovim` | both | Debian 13 has 0.10.4 and Ubuntu 26.04 has 0.11.6; setup-nvim.sh installs the upstream tarball when apt is older than 0.11 |
 | `dialog` | `dialog` | both |  |

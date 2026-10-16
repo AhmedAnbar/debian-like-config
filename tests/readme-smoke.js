@@ -11,13 +11,20 @@ const readme = read('README.md');
 assert.match(readme, /<img src="assets\/logo\.png" alt="[^"]{10,}" width="240">/,
     'The header must show assets/logo.png with descriptive alt text');
 assert.match(readme, /^<h1 align="center">Debian Linux Config<\/h1>$/m);
-for (const badge of ['License-GPL--3.0', 'OS-Debian', 'OS-Ubuntu', 'Desktop-i3', 'Shell-Zsh']) {
+for (const badge of ['License-GPL--3.0', 'OS-Debian', 'OS-Ubuntu', 'OS-Kali', 'Desktop-i3', 'Shell-Zsh']) {
     assert.ok(readme.includes(badge), 'Missing badge: ' + badge);
 }
 assert.match(readme, /^## Package catalogue$/m, 'Task 4 appends the catalogue here');
 // Supported releases are a promise to the reader: name them, and only them.
 assert.match(readme, /Debian 13/);
 assert.match(readme, /Ubuntu 26\.04/);
+assert.match(readme, /Kali/);
+// The first command in the file is the one a reader runs before anything else, and
+// the repository it names has to be the one that exists: AhmedAnbar/debian-linux-config
+// was a typo nobody could clone.
+assert.match(readme, /git clone https:\/\/github\.com\/AhmedAnbar\/debian-like-config\.git/,
+    'The clone URL must name the repository that actually exists');
+assert.doesNotMatch(readme, /debian-linux-config/, 'And never the name that does not');
 
 const license = read('LICENSE');
 assert.match(license, /GNU GENERAL PUBLIC LICENSE/);

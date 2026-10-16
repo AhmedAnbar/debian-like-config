@@ -17,15 +17,33 @@ assert.equal(docker.status, 0, 'DEBIAN_SETUP_CONTAINER_TESTS=1 needs a usable do
 
 const rows = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').trim().split('\n')
     .slice(1).map((line) => line.split('\t'));
-const wanted = (release) => [...new Set(rows
-    .filter(([, , apt, where]) => apt !== '-' && (where === 'both' || where === release))
-    .map(([, , apt]) => apt))].sort();
+// The same resolution map_group_packages performs: the archive's rows, except where
+// this distribution has a row of its own, plus that row -- and nothing for a package
+// it simply lacks. A derivative is the only case where variant differs from release.
+const wanted = (release, variant = release) => {
+    const derived = variant !== release;
+    const overridden = new Set(derived
+        ? rows.filter(([, , , where]) => where === variant).map(([group, arch]) => `${group}/${arch}`)
+        : []);
+    return [...new Set(rows.filter(([group, arch, apt, where]) => {
+        if (apt === '-') return false;
+        if (where === variant && derived) return true;
+        if (where !== 'both' && where !== release) return false;
+        return !overridden.has(`${group}/${arch}`);
+    }).map(([, , apt]) => apt))].sort();
+};
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'apt-names-'));
 try {
-    for (const [release, image] of [['debian', 'debian:stable-slim'], ['ubuntu', 'ubuntu:latest']]) {
-        const list = path.join(scratch, release + '.txt');
-        fs.writeFileSync(list, wanted(release).join('\n') + '\n');
+    for (const [release, image, variant = release] of [
+        ['debian', 'debian:stable-slim'],
+        ['ubuntu', 'ubuntu:latest'],
+        // Kali resolves to the Debian archive's names, so this is the run that proves
+        // its two exceptions are the only two -- and that neither of them is stale.
+        ['debian', 'kalilinux/kali-rolling', 'kali'],
+    ]) {
+        const list = path.join(scratch, variant + '.txt');
+        fs.writeFileSync(list, wanted(release, variant).join('\n') + '\n');
         const result = spawnSync('docker', ['run', '--rm', '-v', `${list}:/list.txt:ro`, image, 'sh', '-c',
             'apt-get update -qq >/dev/null 2>&1 || { echo "apt-get update failed"; exit 1; }\n' +
             'while read -r p; do\n' +
@@ -37,7 +55,7 @@ try {
         assert.equal(result.status, 0, `${image}: ${result.stderr}`);
         assert.doesNotMatch(result.stdout, /MISSING/, `${image} cannot resolve: ${result.stdout}`);
         assert.doesNotMatch(result.stdout, /SIMULATE FAILED/, `${image} cannot install the set together`);
-        console.log(`apt-names-smoke: ${image} resolves all ${wanted(release).length} packages`);
+        console.log(`apt-names-smoke: ${image} resolves all ${wanted(release, variant).length} packages`);
     }
 } finally {
     fs.rmSync(scratch, {recursive: true, force: true});

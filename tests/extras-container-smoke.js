@@ -7,6 +7,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const {spawnSync} = require('node:child_process');
+const fs = require('node:fs');
 const root = path.resolve(__dirname, '..');
 
 if (process.env.DEBIAN_SETUP_CONTAINER_TESTS !== '1') {
@@ -44,9 +45,16 @@ printf 'Include position: %s\\n' "$(grep -n '^Include' /etc/ssh/sshd_config | he
 mkdir -p /etc/ssh/sshd_config.d
 printf 'PasswordAuthentication yes\\n' > /etc/ssh/sshd_config.d/50-other.conf
 printf 'PasswordAuthentication no\\n'  > /etc/ssh/sshd_config.d/99-hardening.conf
-printf 'DROPIN-LOWER-WINS %s\\n' "$(sshd -T 2>/dev/null | awk '/^passwordauthentication/{print $2}')"
+# tolower on the keyword, because OpenSSH 9 lowercases every keyword in this output
+# and OpenSSH 10 prints it in CamelCase: matching one spelling reads empty on the other,
+# and an empty read-back is indistinguishable from a passing one.
+reported() { sshd -T 2>/dev/null | awk 'tolower($1)=="passwordauthentication"{print tolower($2); exit}'; }
+printf 'DROPIN-LOWER-WINS %s\\n' "$(reported)"
 rm -f /etc/ssh/sshd_config.d/50-other.conf
-printf 'DROPIN-ALONE %s\\n'      "$(sshd -T 2>/dev/null | awk '/^passwordauthentication/{print $2}')"
+printf 'DROPIN-ALONE %s\\n'      "$(reported)"
+printf 'SSHD-VERSION %s\\n' "$(sshd -V 2>&1 | head -1)"
+# How this release spells it, which is what setup-hardening.sh has to read back.
+printf 'SSHD-KEYWORD %s\\n' "$(sshd -T 2>/dev/null | awk 'tolower($1)=="passwordauthentication"{print $1; exit}')"
 # And that the drop-in this repository writes is one sshd accepts.
 sshd -t -f /etc/ssh/sshd_config.d/99-hardening.conf >/dev/null 2>&1
 printf 'DROPIN-VALIDATES %s\\n' "$?"
@@ -73,7 +81,11 @@ else
 fi
 `;
 
-for (const image of ['debian:trixie', 'ubuntu:26.04']) {
+// Kali takes the Debian answer to every one of these questions, and this is where
+// that stops being an assumption: the shipped zram stanza, the sshd unit name and the
+// conky package are all facts about an archive a suite ahead of Debian 13.
+const hardening = fs.readFileSync(path.join(root, 'setup-hardening.sh'), 'utf8');
+for (const image of ['debian:trixie', 'ubuntu:26.04', 'kalilinux/kali-rolling']) {
     const result = spawnSync('docker', ['run', '--rm', '-v', `${root}:/bundle:ro`,
         image, 'bash', '-c', script], {encoding: 'utf8', timeout: 1800000});
     const output = `${result.stdout}\n${result.stderr}`;
@@ -100,6 +112,20 @@ for (const image of ['debian:trixie', 'ubuntu:26.04']) {
         + `read-back and its warning are describing something that stopped being true:\n${output}`);
     assert.equal(value('DROPIN-ALONE'), 'no',
         `${image}: 99-hardening.conf alone did not disable password authentication:\n${output}`);
+    // The spelling is evidence, and the script that reads it has to match whatever this
+    // release prints. Debian 13 has OpenSSH 9.9 and prints lowercase; kali-rolling has
+    // 10.5p1 and prints CamelCase, which a case-sensitive read-back would miss entirely
+    // while reporting success on a machine that still accepts passwords.
+    const spelling = value('SSHD-KEYWORD') || '';
+    assert.match(spelling, /^passwordauthentication$/i,
+        `${image}: sshd -T no longer reports that keyword at all:\n${output}`);
+    if (spelling !== spelling.toLowerCase()) {
+        assert.match(hardening, /grep -iE/,
+            `${image} spells it ${spelling} (${value('SSHD-VERSION')}), so setup-hardening.sh `
+            + `must read the effective configuration back case-insensitively`);
+        assert.match(hardening, /grep -qix/,
+            `${image} spells it ${spelling}, so the surviving-yes check must be case-insensitive too`);
+    }
     assert.equal(value('DROPIN-VALIDATES'), '0',
         `${image}: sshd rejected the drop-in this repository writes:\n${output}`);
 

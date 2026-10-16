@@ -30,7 +30,7 @@ const releases = {
 // sshd exists at all -- the same trick tests/setup-sway-smoke.js uses for sway.
 const scenario = ({
     answers = 'n\n'.repeat(20), release = 'debian', keys = null,
-    sshd = 'ok', args = [], otherDropins = {}, effective = null,
+    sshd = 'ok', args = [], otherDropins = {}, effective = null, sshdCase = 'lower',
 } = {}) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hardening-'));
     const log = path.join(home, 'calls');
@@ -68,10 +68,17 @@ const scenario = ({
         // wins: verified in a debian:trixie container, where a 50-*.conf saying
         // "PasswordAuthentication yes" leaves `sshd -T` reporting yes even with
         // 99-hardening.conf saying no. The `effective` knob is that outcome.
+        // OpenSSH 9 prints the keywords of sshd -T lowercased; OpenSSH 10 prints them
+        // in CamelCase. Debian 13 ships 9.9 and kali-rolling 10.5, both of which this
+        // script has to read, so the stub can answer in either style.
+        const settings = sshdCase === 'camel'
+            ? [`PasswordAuthentication ${effective || 'no'}`, 'PermitRootLogin no',
+                'KbdInteractiveAuthentication no', 'X11Forwarding no']
+            : [`passwordauthentication ${effective || 'no'}`, 'permitrootlogin no',
+                'kbdinteractiveauthentication no', 'x11forwarding no'];
         stub('sshd', `echo "sshd $*" >> ${log}
 case "$*" in
-  *-T*) printf 'passwordauthentication ${effective || 'no'}\\n'
-        printf 'permitrootlogin no\\nkbdinteractiveauthentication no\\nx11forwarding no\\n'
+  *-T*) printf '${settings.join('\\n')}\\n'
         exit 0 ;;
 esac
 if [ -e ${dropin} ]; then echo "sshd ran with the drop-in already installed" >> ${log}; fi
@@ -286,6 +293,36 @@ const realKey = 'restrict,pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJexampleexamp
     assert.match(s.result.stdout, /Steps that failed:|did not take effect/i,
         'A setting that did not take is a failure, not a success');
     assert.notEqual(s.result.status, 0, 'And the run says so to whatever called it');
+    cleanup(s);
+}
+
+// The same thing on an OpenSSH 10 machine, which is what kali-rolling has: sshd -T
+// answers "PasswordAuthentication yes" rather than "passwordauthentication yes", and a
+// read-back that only matched the old spelling would find nothing -- reporting success
+// on a machine that still accepts passwords, which is the one outcome this script
+// exists to prevent.
+{
+    const s = scenario({answers: 'y\n'.repeat(20), keys: 'ssh-ed25519 AAAAC3Nz real@key\n',
+        otherDropins: {'50-cloud-init.conf': 'PasswordAuthentication yes\n'},
+        effective: 'yes', sshdCase: 'camel'});
+    assert.match(s.result.stdout, /PasswordAuthentication yes/,
+        'The read-back must find the setting whatever case sshd prints it in');
+    assert.match(s.result.stdout + s.result.stderr, /did not take effect/,
+        'And a surviving yes must be called out, not passed over in silence');
+    assert.match(s.result.stdout, /Steps that failed:/,
+        'And recorded as a failure');
+    assert.notEqual(s.result.status, 0, 'And reported to whatever called the script');
+    cleanup(s);
+}
+
+// And on that same machine, with nothing in the way, the four settings still reach the
+// user: a read-back that prints nothing is indistinguishable from one that was skipped.
+{
+    const s = scenario({answers: 'y\n'.repeat(20), keys: 'ssh-ed25519 AAAAC3Nz real@key\n',
+        sshdCase: 'camel'});
+    assert.match(s.result.stdout, /PasswordAuthentication no/i, 'The password setting is shown');
+    assert.match(s.result.stdout, /PermitRootLogin no/i, 'And root logins');
+    assert.doesNotMatch(s.result.stdout, /could not confirm/i, 'Nothing was skipped');
     cleanup(s);
 }
 
