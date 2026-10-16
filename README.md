@@ -48,6 +48,14 @@ bash install.sh
 Nothing is installed or replaced without a prompt, and every file it replaces is
 backed up under `~/.local/state/debian-desktop-setup/`.
 
+`install.sh` offers two of its steps as separate scripts, because each owns a package
+group of its own and both are worth re-running on their own later:
+
+```bash
+bash setup-zsh.sh    # the bundled Zsh configuration, and Zsh as your login shell
+bash setup-nvim.sh   # Neovim and its plugins, with the editor-tools group
+```
+
 ## Package catalogue
 
 Every package the installer can offer, generated from `packages/apt-map.tsv`. `Releases` says where the package exists: `both`, `debian`, `ubuntu`, `none` when apt has no such package, or `kali` for a row that replaces the Debian name on Kali alone.
@@ -184,6 +192,9 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `snapper` | `snapper` | both | Needs the configured path to be a btrfs subvolume, and adds an apt hook that snapshots around every later apt run |
 | `btrfs-progs` | `btrfs-progs` | both | The subvolume tooling both snapshot routes call, and what findmnt checks for before either runs |
 | `openssh-server` | — | both | sshd lives here, not in the openssh-client the dev group installs; installing it starts a listening service |
+| `ruby` | `ruby` | both | colorls is a Ruby program and the interpreter is not installed by default |
+| `ruby-dev` | — | both | The clocale gem in the dependency tree is a C extension and needs ruby.h |
+| `build-essential` | — | both | ruby3.3-dev depends on libgmp-dev and libruby3.3 and brings no compiler of its own |
 
 ## Keyboard
 
@@ -309,16 +320,23 @@ What is worth knowing before you run them:
 
 ## System extras
 
-Five system features rather than applications. The same rules apply: every step
-asks, declines by default, and `--dry-run` previews.
+Eight scripts for the system and the shell rather than applications. The same rules
+apply: every step asks, declines by default, and `--dry-run` previews.
 
 ```bash
 bash setup-tor-browser.sh   # from a signed tarball you stage yourself
 bash setup-conky.sh         # the system panel, for both i3 and Sway
+bash setup-herdr.sh         # Herdr, the terminal multiplexer, from its own installer
+bash setup-colorls.sh       # ls with colours and icons, from the user gem path
 bash setup-zram.sh          # zram swap through systemd-zram-generator
 bash setup-snapshots.sh     # btrbk on a timer, snapper separately
 bash setup-hardening.sh     # SSH, last and loudest
+bash setup-zenbook-cpu-cap.sh   # ASUS Zenbook S 16 (UM5606) only: unclamp the CPU
 ```
+
+The last one is the only hardware-specific script in this repository, and `install.sh`
+offers it only when the DMI product name matches `*UM5606*`. The rest are offered
+everywhere.
 
 - **Tor Browser** is never downloaded here: `dist.torproject.org` is unreachable
   from this machine, so the tarball and its `.asc` are staged from somewhere that
@@ -394,9 +412,64 @@ What a container cannot prove is what is left, and none of it is code:
 - zram, the snapshot timers and the SSH restart need a **reboot or a new session**
   to show. `systemd-zram-generator` refuses to run in a container at all
   ("Running in a container, exiting").
-- Every version in this README is a snapshot taken on 2026-10-15.
 
-Four test files do reach the real world, and they are the ones to run before trusting a
+- **Herdr** is installed from `herdr.dev` into `~/.local/bin` as your normal user,
+  behind two review gates: one before the installer is downloaded, one after it has
+  been syntax-checked and its SHA-256 printed. Upstream publishes no apt repository,
+  no `.deb` and no signature over either, and the checksum the installer verifies
+  comes from the same host that serves the installer — so that is a transport check,
+  not an independent one, and both prompts are worth answering. Nothing runs as root.
+  An existing `herdr` binary is left exactly as it is; only the two configuration
+  steps are offered, which is the reason to run the script again. Those steps write
+  only the keys they manage into `~/.config/herdr/config.toml`, keeping a copy of
+  whatever they replaced beside it:
+
+  ```toml
+  [keys]
+  prefix = "ctrl+a"
+  switch_workspace = "prefix+shift+1..9"
+
+  [ui]
+  sidebar_start_collapsed = true
+  sidebar_collapsed_mode = "hidden"
+  tab_bar_right = [{ type = "command", command = "/home/you/.config/herdr/workspaces-status.sh", interval_seconds = 1, timeout_seconds = 2 }]
+  ```
+
+  That `command` path is absolute on purpose, with `/home/you` standing in for your own
+  home directory: herdr does not expand `~` inside a TOML string, and a `~`-relative
+  path there produces an empty tab row and no error at all. Workspaces take the shifted
+  digits because `prefix+1..9` already switches tabs. The tab row prints nothing until a
+  herdr server exists — `herdr workspace list` exits 1 with `server_not_running` before
+  the first client starts — and that is what first launch looks like, not a failure.
+- **colorls** is in no Debian-family archive: `apt-get install -s ruby-colorls` answers
+  `E: Unable to locate package ruby-colorls` on Debian 13, Ubuntu 26.04 and Kali Rolling
+  alike. apt supplies only `ruby`, `ruby-dev` and `build-essential`, which the `clocale`
+  C extension in its dependency tree needs to build, and the gem itself goes into
+  `~/.local/share/gem` with `gem install --user-install`. The aliases live in
+  `~/.config/shell/colorls.sh` — that literal path, not `$XDG_CONFIG_HOME`, because
+  `zsh/zshrc` and `install.sh` both name it literally — and one guarded line in
+  `~/.bashrc` and `~/.zshrc` sources it, appended once and backed up first. The Arch
+  repository's `unicode-display_width` 2.x pin is deliberately not carried over: the
+  resolver chose 2.6.0 by itself in all three containers. Icons need a patched font,
+  which no archive carries, so they are substitution boxes until you install a Nerd
+  Font by hand.
+- **The Zenbook CPU cap** is one `modprobe.d` file blacklisting `amd_pmf`, `amdxdna`
+  and `asus_armoury`, which the UM5606 firmware answers by pinning every core to
+  605 MHz and about 5 W. The script refuses on any other model unless you pass
+  `--force`. Every figure it prints was measured on the Arch install of that laptop and
+  says so: no Debian-family install of it exists yet, so nothing here re-measured them.
+  The clamp has a second, identical-looking cause — a stuck embedded controller — and
+  the script tells you how to tell the two apart with `systemd-analyze` before it asks
+  for anything, because no blacklist can help the second one. The initramfs rebuild it
+  offers afterwards is housekeeping rather than the fix: four images built in containers
+  were searched for those three module names and held none of them, so declining the
+  rebuild still leaves the fix in place. It detects `initramfs-tools` and `dracut` by
+  asking `update-initramfs --version` which one it is, the same test Debian's own kernel
+  hooks use, and rebuilds every installed kernel rather than only the running one.
+- Every version in this README is a snapshot taken on 2026-10-15, except the three
+  scripts above, measured on 2026-10-16.
+
+Five test files do reach the real world, and they are the ones to run before trusting a
 vendor route again. All need Docker and are off by default:
 
 ```bash
@@ -404,7 +477,14 @@ DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/vendor-container-smoke.js   # the five
 DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/extras-container-smoke.js   # the system facts phase 4 relies on
 DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/apt-names-smoke.js          # every name in the map resolves
 DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/sway-container-smoke.js     # sway and waybar parse the config
+DEBIAN_SETUP_CONTAINER_TESTS=1 node tests/setup-herdr-smoke.js        # the herdr awk edits, under mawk
 ```
+
+The last one is unlike the other four: it runs its whole fast suite either way and
+adds one scenario when the variable is set. All three target distributions resolve
+`awk` to `/usr/bin/mawk`, while the machine this port was written on has gawk, so the
+two awk programs that edit `config.toml` are proved against the real mawk rather than
+argued about.
 
 `vendor-container-smoke` runs the real `add_vendor_repo` against the real hosts in both
 releases, reading each key URL out of the script that uses it, and checks that the

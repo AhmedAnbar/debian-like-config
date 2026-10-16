@@ -9,7 +9,7 @@ const lines = fs.readFileSync(path.join(root, 'packages/apt-map.tsv'), 'utf8').t
 assert.equal(lines[0], ['group', 'arch', 'apt', 'where', 'note'].join('\t'), 'Header row');
 const groups = new Set(['core-desktop', 'audio', 'input-emoji', 'browser-files', 'dev', 'shell',
     'editor-tools', 'sway', 'chrome', 'dbeaver', 'onlyoffice', 'dropbox', 'docker', 'postman',
-    'tor', 'conky-panel', 'zram', 'snapshots', 'hardening']);
+    'tor', 'conky-panel', 'zram', 'snapshots', 'hardening', 'colorls']);
 // A derivative's where value names one distribution rather than an archive: its row
 // replaces the parent's row for the same Arch package, and is invisible everywhere
 // else. Kali is the only one so far, and the rules below keep it honest -- an override
@@ -93,7 +93,8 @@ const owners = {'editor-tools': 'setup-nvim.sh', sway: 'setup-sway.sh',
     chrome: 'setup-chrome.sh', dbeaver: 'setup-dbeaver.sh', onlyoffice: 'setup-onlyoffice.sh',
     dropbox: 'setup-dropbox.sh', docker: 'setup-docker.sh', postman: 'setup-postman.sh',
     tor: 'setup-tor-browser.sh', 'conky-panel': 'setup-conky.sh', zram: 'setup-zram.sh',
-    snapshots: 'setup-snapshots.sh', hardening: 'setup-hardening.sh'};
+    snapshots: 'setup-snapshots.sh', hardening: 'setup-hardening.sh',
+    colorls: 'setup-colorls.sh'};
 const installSource = fs.readFileSync(path.join(root, 'install.sh'), 'utf8');
 const labelled = new Set([...installSource.matchAll(/^\s*\[([a-z-]+)\]=/gm)].map((m) => m[1]));
 for (const group of new Set(lines.slice(1).map((line) => line.split('\t')[0]))) {

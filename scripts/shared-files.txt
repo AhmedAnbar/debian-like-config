@@ -9,6 +9,7 @@ config/flameshot/flameshot.ini
 config/fontconfig/fonts.conf
 config/gtk-3.0/settings.ini
 config/gtk-4.0/settings.ini
+config/herdr/workspaces-status.sh
 config/i3/brightness.sh
 config/i3/launcher.sh
 config/i3/touchpad.sh

@@ -30,6 +30,16 @@ panel for both sessions, `setup-zram.sh`, `setup-snapshots.sh` and
 
 Out: nothing. This is the last phase.
 
+**Correction, 2026-10-16.** Both claims above -- that this phase leaves nothing out, and
+that the repository afterwards covers every subject the Arch repository does -- were
+wrong. Three subjects had no counterpart here when the phase closed:
+`setup-zenbook-cpu-cap.sh`, `setup-herdr.sh` with its five configuration helpers, and
+`setup-colorls.sh`. The first was named in the phase 1 spec as phase 4 work ("whatever
+replaces the Zenbook CPU cap on Debian") and was then dropped without a decision being
+recorded. `sync-from-arch.sh --check` did not catch any of it: it compares files both
+repositories have, and is silent about a file only Arch has. The three were ported on
+2026-10-16; the guard's blind spot remains.
+
 ## The decisions taken
 
 1. **One tarball mechanism, written once.** Postman and Tor Browser share it:

@@ -132,10 +132,13 @@ if ask 'Install the desktop configuration bundle (each existing changed file ask
         install_file "$source" "$relative"
     # nvim belongs to setup-nvim.sh, and the Wayland session belongs to setup-sway.sh:
     # a user who never asked for Sway must not find its configuration installed, least
-    # of all a portal preference the X11 session reads as well.
+    # of all a portal preference the X11 session reads as well. herdr is the same bargain
+    # with a different owner: setup-herdr.sh installs that status script itself, mode 755,
+    # and only for a user who takes the tab-row step.
     done 3< <(find "$bundle_dir/config" \( -path "$bundle_dir/config/nvim" \
         -o -path "$bundle_dir/config/sway" -o -path "$bundle_dir/config/waybar" \
         -o -path "$bundle_dir/config/mako" -o -path "$bundle_dir/config/swaylock" \
+        -o -path "$bundle_dir/config/herdr" \
         -o -path "$bundle_dir/config/xdg-desktop-portal" \) -prune -o -type f -print0 | sort -z)
     # The scripts must stay executable; plain configuration is installed mode 644 above.
     for script in i3/brightness.sh i3/emoji.sh i3/launcher.sh i3/touchpad.sh \
@@ -209,12 +212,13 @@ fi
 # vendor host that is down today must not stop the ones after it. Hardening is last
 # because it is the only one that can lock this machine's owner out of it.
 #
-# Overridable so the tests can prove this mechanism without running eleven interactive
+# Overridable so the tests can prove this mechanism without running thirteen interactive
 # installers that reach vendor hosts: DEBIAN_SETUP_DELEGATES is a space-separated list
 # of scripts in this directory.
 read -r -a delegate_scripts <<< "${DEBIAN_SETUP_DELEGATES-setup-chrome.sh setup-dbeaver.sh \
 setup-onlyoffice.sh setup-dropbox.sh setup-docker.sh setup-postman.sh setup-tor-browser.sh \
-setup-conky.sh setup-zram.sh setup-snapshots.sh setup-hardening.sh}"
+setup-conky.sh setup-herdr.sh setup-colorls.sh setup-zram.sh setup-snapshots.sh \
+setup-hardening.sh}"
 declare -A delegate_prompt=(
     [setup-chrome.sh]="Install Google Chrome from Google's own apt repository?"
     [setup-dbeaver.sh]='Install DBeaver CE, the database tool, from dbeaver.io?'
@@ -224,10 +228,22 @@ declare -A delegate_prompt=(
     [setup-postman.sh]='Install Postman from the vendor tarball (no checksum or signature is published)?'
     [setup-tor-browser.sh]='Install Tor Browser from an already-staged signed tarball?'
     [setup-conky.sh]='Install the conky system panel for both sessions?'
+    [setup-herdr.sh]='Install Herdr, the terminal multiplexer, from its own upstream installer?'
+    [setup-colorls.sh]='Install colorls and make ls, ll and la use it in Bash and Zsh?'
     [setup-zram.sh]='Set up zram swap through systemd-zram-generator?'
     [setup-snapshots.sh]='Set up btrfs snapshots (btrbk on a timer, snapper separately)?'
     [setup-hardening.sh]='Harden SSH on this machine? It changes how you can log in to it.'
+    [setup-zenbook-cpu-cap.sh]='Stop this Zenbook firmware pinning the CPU to 605 MHz, by blacklisting three modules?'
 )
+# Hardware-specific, so it is offered only where it applies. The script exits 1 on
+# anything that is not a UM5606, which is right for a script someone runs by hand and
+# wrong for a delegate: attempt would record a failed step on every other laptop. The
+# glob is the one setup-sway.sh already uses for this model. An explicit
+# DEBIAN_SETUP_DELEGATES stays the whole list, so a test is hermetic even on this laptop.
+if [[ -z "${DEBIAN_SETUP_DELEGATES+x}" ]]; then
+    dmi_name=${DEBIAN_SETUP_DMI_NAME:-$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)}
+    if [[ "$dmi_name" == *UM5606* ]]; then delegate_scripts+=(setup-zenbook-cpu-cap.sh); fi
+fi
 # Nothing to say when there is nothing to offer: an empty list is how the tests keep a
 # run hermetic, and a heading with no questions under it would be a puzzle.
 if (( ${#delegate_scripts[@]} )); then

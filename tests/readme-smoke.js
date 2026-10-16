@@ -75,9 +75,12 @@ assert.match(readme, /not been run on a real Debian|confirmed on the machine|can
 // that does not exist to them.
 assert.match(readme, /^## Third-party applications$/m, 'Phase 3 documents its own section');
 assert.match(readme, /^## System extras$/m, 'And phase 4 its own');
-for (const script of ['setup-chrome.sh', 'setup-dbeaver.sh', 'setup-onlyoffice.sh',
-    'setup-dropbox.sh', 'setup-docker.sh', 'setup-postman.sh', 'setup-tor-browser.sh',
-    'setup-conky.sh', 'setup-zram.sh', 'setup-snapshots.sh', 'setup-hardening.sh']) {
+// Derived from the directory rather than listed here, because a hard-coded list is
+// exactly how three scripts the Arch repository has went unported and unnoticed: a
+// list cannot fail for a script nobody remembered to add to it.
+const scripts = fs.readdirSync(root).filter((name) => /^setup-[a-z0-9-]+\.sh$/.test(name)).sort();
+assert.ok(scripts.length >= 14, `Expected the full set of setup scripts, found ${scripts.length}`);
+for (const script of scripts) {
     assert.ok(readme.includes(script), `The README must name ${script}`);
 }
 // The decisions and caveats a user cannot discover by reading the package list.

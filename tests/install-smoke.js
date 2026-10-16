@@ -178,9 +178,11 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     // The Sway session is an optional addition, and declining it has to cost nothing:
     // its dotfiles belong to setup-sway.sh. The portal preference especially — the X11
     // session reads that file too, and nobody asked for Wayland here.
-    for (const directory of ['sway', 'waybar', 'mako', 'swaylock', 'xdg-desktop-portal']) {
+    // herdr/ is the same bargain with a different owner: setup-herdr.sh installs that
+    // status script itself, mode 755, and only if the user takes the tab-row step.
+    for (const directory of ['sway', 'waybar', 'mako', 'swaylock', 'xdg-desktop-portal', 'herdr']) {
         assert.ok(!fs.existsSync(path.join(home, '.config', directory)),
-            `install.sh must leave ${directory}/ to setup-sway.sh`);
+            `install.sh must leave ${directory}/ to the script that owns it`);
     }
     // What it does own is still installed, including the helpers both sessions share.
     for (const relative of ['i3/config', 'i3/brightness.sh', 'i3/emoji.sh', 'rofi/i3-theme.rasi']) {
@@ -528,10 +530,42 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     assert.doesNotMatch(none.stdout, /These install one application or system feature each/,
         'An empty delegate list prints no heading');
 
+    // The Zenbook CPU cap is hardware-specific, so it is offered only where it applies:
+    // the script exits 1 on anything that is not a UM5606, and install.sh runs every
+    // delegate through attempt, so offering it everywhere would record a failed step on
+    // every other laptop.
+    const runWithDmi = (dmi, delegates) => {
+        const vars = {...env(debian), HOME: home, PATH: `${stubs}:${process.env.PATH}`,
+            DEBIAN_SETUP_DMI_NAME: dmi};
+        // env() pins an empty delegate list to keep runs hermetic, and the gate only
+        // shapes the default, so this case has to leave the variable genuinely unset --
+        // an empty DEBIAN_SETUP_DELEGATES is an explicit list of nothing, not an absence.
+        if (delegates === undefined) delete vars.DEBIAN_SETUP_DELEGATES;
+        else vars.DEBIAN_SETUP_DELEGATES = delegates;
+        return spawnSync('bash', [path.join(bundle, 'install.sh'), '--dry-run'],
+            {encoding: 'utf8', timeout: 90000, input: 'n\n'.repeat(200), env: vars});
+    };
+    // The real script, so the offer is the real offer: declined and --dry-run, it runs
+    // nothing. Without it in the bundle install.sh would only report it as missing, and
+    // the assertion below would pass on that message instead of on the offer.
+    fs.cpSync(path.join(root, 'setup-zenbook-cpu-cap.sh'),
+        path.join(bundle, 'setup-zenbook-cpu-cap.sh'));
+    const zenbook = runWithDmi('ASUS Zenbook S 16 UM5606WA_UM5606WA');
+    assert.match(zenbook.stdout, /bash setup-zenbook-cpu-cap\.sh/,
+        'On a UM5606 the CPU cap script is among the delegates');
+    assert.doesNotMatch(runWithDmi('XPS 13 9310').stdout, /setup-zenbook-cpu-cap/,
+        'On any other machine it is not offered at all, not even to be declined');
+    // An explicit list stays the whole list, so a test or a script can be hermetic even
+    // when it runs on this very laptop.
+    assert.doesNotMatch(runWithDmi('ASUS Zenbook S 16 UM5606WA_UM5606WA', fixtures).stdout,
+        /setup-zenbook-cpu-cap/, 'DEBIAN_SETUP_DELEGATES is the whole list when it is set');
+
     fs.rmSync(home, {recursive: true, force: true});
 }
 
-// The default list is the eleven real scripts, in order, with hardening last. Read from
+// The default list is the thirteen unconditional scripts, in order, with hardening last.
+// The Zenbook CPU cap is not among them: it is appended only on that hardware, and the
+// delegate block above proves that. Read from
 // the default expansion itself, not from the file as a whole: every one of these names
 // also appears in the prompt table, so a substring search over install.sh would stay
 // green if a name were dropped from the list that actually runs.
@@ -543,8 +577,9 @@ assert.doesNotMatch(broken.stdout, /apt-get install/, 'Do not attempt the instal
     assert.deepEqual(defaults, [
         'setup-chrome.sh', 'setup-dbeaver.sh', 'setup-onlyoffice.sh', 'setup-dropbox.sh',
         'setup-docker.sh', 'setup-postman.sh', 'setup-tor-browser.sh', 'setup-conky.sh',
-        'setup-zram.sh', 'setup-snapshots.sh', 'setup-hardening.sh',
-    ], 'Every phase 3 and 4 script is offered, and SSH hardening is offered last');
+        'setup-herdr.sh', 'setup-colorls.sh', 'setup-zram.sh', 'setup-snapshots.sh',
+        'setup-hardening.sh',
+    ], 'Every unconditional script is offered, and SSH hardening is offered last');
     for (const script of defaults) {
         assert.ok(fs.existsSync(path.join(root, script)), `${script} must exist to be offered`);
         assert.ok(new RegExp(`\\[${script.replace('.', '\\.')}\\]=`).test(body),

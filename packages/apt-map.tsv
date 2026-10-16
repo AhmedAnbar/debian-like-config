@@ -129,3 +129,6 @@ snapshots	btrbk	btrbk	both	0.32.6 on both releases; ships only btrbk.conf.exampl
 snapshots	snapper	snapper	both	Needs the configured path to be a btrfs subvolume, and adds an apt hook that snapshots around every later apt run
 snapshots	btrfs-progs	btrfs-progs	both	The subvolume tooling both snapshot routes call, and what findmnt checks for before either runs
 hardening	-	openssh-server	both	sshd lives here, not in the openssh-client the dev group installs; installing it starts a listening service
+colorls	ruby	ruby	both	colorls is a Ruby program and the interpreter is not installed by default
+colorls	-	ruby-dev	both	The clocale gem in the dependency tree is a C extension and needs ruby.h
+colorls	-	build-essential	both	ruby3.3-dev depends on libgmp-dev and libruby3.3 and brings no compiler of its own
