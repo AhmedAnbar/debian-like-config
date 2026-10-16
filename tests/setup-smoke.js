@@ -150,6 +150,70 @@ fs.rmSync(scratch, {recursive: true, force: true});
         'Identical contents at the wrong mode must still be corrected');
     fs.rmSync(modeScratch, {recursive: true, force: true});
 }
+// A dotfiles-managed ~/.zshrc is a symbolic link, and cp -a copies the link rather
+// than what it points at, so the "backup" holds no content of its own. install_file in
+// lib/common.sh uses -aL for exactly this reason, and this script has to agree with it:
+// a backup whose value depends on the original still existing is not a backup.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-zshrc-link-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    for (const name of ['apt-get', 'git', 'chsh', 'zsh']) {
+        fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    const checkout = path.join(home, 'dotfiles');
+    fs.mkdirSync(checkout);
+    fs.writeFileSync(path.join(checkout, 'zshrc'), '# my own zshrc\n');
+    fs.symlinkSync(path.join(checkout, 'zshrc'), path.join(home, '.zshrc'));
+    // apt no, Oh My Zsh no, apply the bundled zshrc yes, login shell no.
+    const result = spawnSync('bash', [path.join(root, 'setup-zsh.sh')], {
+        encoding: 'utf8', timeout: 30000, input: 'n\nn\ny\nn\n',
+        env: {...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const backups = fs.readdirSync(home).filter((name) => name.startsWith('.zshrc.backup-'));
+    assert.equal(backups.length, 1, 'Exactly one backup of the replaced file is taken');
+    const backup = path.join(home, backups[0]);
+    assert.ok(!fs.lstatSync(backup).isSymbolicLink(),
+        'A copied symlink is not a backup: it holds no content of its own');
+    assert.equal(fs.readFileSync(backup, 'utf8'), '# my own zshrc\n',
+        'The backup holds the bytes that were in place before the run');
+    assert.ok(!fs.lstatSync(path.join(home, '.zshrc')).isSymbolicLink(),
+        'And the bundled file replaces the link rather than being written through it');
+    // The whole point of a backup is that it survives losing the original.
+    fs.rmSync(checkout, {recursive: true, force: true});
+    assert.equal(fs.readFileSync(backup, 'utf8'), '# my own zshrc\n',
+        'And still holds them once the checkout it came from is gone');
+    fs.rmSync(home, {recursive: true, force: true});
+}
+// Dereferencing has its own edge: a ~/.zshrc left behind as a symbolic link to a file
+// that no longer exists. cp -aL cannot copy it, and under set -e that would end the run
+// at the backup step -- so there has to be nothing to back up, said out loud, rather
+// than a failure or a silent replacement.
+{
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'debian-zshrc-dangling-'));
+    const stubs = path.join(home, 'bin');
+    fs.mkdirSync(stubs);
+    for (const name of ['apt-get', 'git', 'chsh', 'zsh']) {
+        fs.writeFileSync(path.join(stubs, name), '#!/bin/sh\nexit 0\n', {mode: 0o755});
+    }
+    fs.writeFileSync(path.join(stubs, 'sudo'), '#!/bin/sh\nexec "$@"\n', {mode: 0o755});
+    fs.symlinkSync(path.join(home, 'dotfiles', 'zshrc'), path.join(home, '.zshrc'));
+    const result = spawnSync('bash', [path.join(root, 'setup-zsh.sh')], {
+        encoding: 'utf8', timeout: 30000, input: 'n\nn\ny\nn\n',
+        env: {...process.env, HOME: home, PATH: `${stubs}:${process.env.PATH}`},
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /symbolic link with no target/,
+        'The reason no backup was taken is printed, not left to be guessed at');
+    assert.equal(fs.readdirSync(home).filter((n) => n.startsWith('.zshrc.backup-')).length, 0,
+        'A link with no target has no contents to preserve, so no backup is written');
+    assert.equal(fs.readFileSync(path.join(home, '.zshrc'), 'utf8'),
+        fs.readFileSync(path.join(root, 'zsh/zshrc'), 'utf8'),
+        'And the bundled zshrc is still installed');
+    fs.rmSync(home, {recursive: true, force: true});
+}
 // The spec named four consumers of the shared helpers, and a second copy of the
 // consent path is the defect the phase 1 review found.
 for (const script of ['setup-zsh.sh', 'setup-nvim.sh']) {

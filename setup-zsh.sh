@@ -26,7 +26,18 @@ if ask 'Apply the bundled zshrc (your existing file is backed up first)?'; then
         zsh -n "$bundle_dir/zsh/zshrc"
     fi
     if [[ -e "$HOME/.zshrc" || -L "$HOME/.zshrc" ]]; then
-        run cp -a "$HOME/.zshrc" "$HOME/.zshrc.backup-$(date +%Y%m%d-%H%M%S)-$$"
+        if [[ -e "$HOME/.zshrc" ]]; then
+            # -aL, not -a: a dotfiles-managed .zshrc is a symbolic link, and copying the
+            # link leaves a backup that holds no content of its own -- worthless as soon
+            # as the checkout it points into moves. install_file in lib/common.sh
+            # dereferences for the same reason.
+            run cp -aL "$HOME/.zshrc" "$HOME/.zshrc.backup-$(date +%Y%m%d-%H%M%S)-$$"
+        else
+            # -L without -e: a link whose target is gone. There is nothing to copy, and
+            # cp -aL would end the run here, so say so and carry on.
+            printf '%s is a symbolic link with no target, so there is nothing to back up.\n' \
+                "$HOME/.zshrc"
+        fi
         run unlink "$HOME/.zshrc"
     fi
     run install -m644 "$bundle_dir/zsh/zshrc" "$HOME/.zshrc"
