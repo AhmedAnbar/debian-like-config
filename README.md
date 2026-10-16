@@ -36,6 +36,10 @@ keywords of `sshd -T` in CamelCase where Debian 13's 9.9 lowercases them, so the
 hardening script reads its effective configuration back case-insensitively — a
 case-sensitive match would find nothing there and call that success.
 
+[**KALI.md**](KALI.md) is the step-by-step run-book for a fresh Kali install: the
+clone, the preview, every prompt in the order it arrives, the Zenbook CPU cap step,
+and what to do when a step fails.
+
 ## Get started
 
 ```sh

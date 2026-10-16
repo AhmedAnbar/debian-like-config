@@ -103,4 +103,33 @@ const later = readme.slice(readme.indexOf('## What comes later'));
 assert.doesNotMatch(later, /Still to come[\s\S]{0,400}Postman/,
     'Phases 3 and 4 are no longer "still to come"');
 
+// KALI.md is the run-book for the one target that has rows of its own in the map, so the
+// map is what keeps it honest: a Kali row nobody wrote about is a surprise waiting for
+// whoever follows the file. Derived, not listed, for the same reason as the scripts above.
+{
+    const kali = read('KALI.md');
+    const kaliRows = read('packages/apt-map.tsv').trim().split('\n').slice(1)
+        .map((line) => line.split('\t')).filter(([, , , where]) => where === 'kali');
+    assert.ok(kaliRows.length >= 2, 'The map still carries the Kali rows this file explains');
+    for (const [, arch, apt] of kaliRows) {
+        assert.ok(kali.includes(apt === '-' ? arch : apt),
+            `KALI.md must say what becomes of ${arch} on Kali`);
+    }
+    // The first command a reader runs has to be the one that works.
+    assert.match(kali, /git clone https:\/\/github\.com\/AhmedAnbar\/debian-like-config\.git/,
+        'KALI.md must carry the clone URL that exists');
+    assert.doesNotMatch(kali, /debian-linux-config/, 'That repository name does not exist');
+    for (const script of ['install.sh', 'setup-sway.sh', 'setup-zenbook-cpu-cap.sh',
+        'setup-hardening.sh']) {
+        assert.ok(kali.includes(script), `KALI.md must name ${script}`);
+    }
+    // Same two promises the README makes: no identifier for the staging host, and no
+    // pretending the scripts have been run on a real machine.
+    assert.doesNotMatch(kali, /\b(?:\d{1,3}\.){3}\d{1,3}\b/,
+        'No address for the staging host may appear in this repository');
+    assert.match(kali, /Host vps/, 'The relay is named by its ssh alias and nothing else');
+    assert.match(kali, /has not run on real hardware|not been run on real hardware/i,
+        'KALI.md must not imply the scripts have been proved on a real machine');
+}
+
 console.log('readme-smoke: all checks passed');
