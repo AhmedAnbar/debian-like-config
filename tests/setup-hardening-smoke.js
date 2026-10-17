@@ -31,8 +31,9 @@ const releases = {
 const scenario = ({
     answers = 'n\n'.repeat(20), release = 'debian', keys = null,
     sshd = 'ok', args = [], otherDropins = {}, effective = null, sshdCase = 'lower',
+    prefix = 'hardening-',
 } = {}) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'hardening-'));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
     const log = path.join(home, 'calls');
     const sshRoot = path.join(home, 'root');
     const dropin = path.join(sshRoot, 'etc/ssh/sshd_config.d/99-hardening.conf');
@@ -76,13 +77,17 @@ const scenario = ({
                 'KbdInteractiveAuthentication no', 'X11Forwarding no']
             : [`passwordauthentication ${effective || 'no'}`, 'permitrootlogin no',
                 'kbdinteractiveauthentication no', 'x11forwarding no'];
+        // Compared against each argument, never against "$*": the last argument of the
+        // validation call is the path of the staged file, and a scratch directory whose
+        // name holds "-T" would otherwise make `sshd -t -f` look like `sshd -T`.
         stub('sshd', `echo "sshd $*" >> ${log}
-case "$*" in
-  *-T*) printf '${settings.join('\\n')}\\n'
-        exit 0 ;;
-esac
+readback=no
+for a in "$@"; do last=$a; if [ "$a" = -T ]; then readback=yes; fi; done
+if [ "$readback" = yes ]; then
+  printf '${settings.join('\\n')}\\n'
+  exit 0
+fi
 if [ -e ${dropin} ]; then echo "sshd ran with the drop-in already installed" >> ${log}; fi
-for a in "$@"; do last=$a; done
 cat "$last" >> ${seen} 2>/dev/null
 exit ${sshd === 'ok' ? 0 : 255}`);
     }
@@ -238,6 +243,23 @@ const realKey = 'restrict,pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJexampleexamp
     assert.doesNotMatch(s.log, /systemctl restart/, 'And nothing is restarted');
     assert.match(s.out, /sshd -t/, 'Say what rejected it');
     assert.match(s.out, /Steps that failed/, 'The summary names the failure');
+    cleanup(s);
+}
+
+// The same rejection, staged inside a directory whose own name holds "-T". The path of
+// the staged file is one of the arguments sshd is handed, so a stub that looked for -T
+// anywhere in the whole argument string answered this validation call as if it were a
+// read-back: exit 0, a file sshd had refused installed anyway, and a failed step
+// reported as success. mkdtemp draws that letter about one time in sixty, which is what
+// made this test fail intermittently and pass on every rerun.
+{
+    const s = scenario({answers: 'y\n'.repeat(20), keys: realKey, sshd: 'bad',
+        prefix: 'hardening-Tmp-'});
+    assert.equal(s.result.status, 1,
+        'A rejected configuration is a failed step, wherever it was staged');
+    assert.ok(!fs.existsSync(s.dropin), 'A file sshd refuses must not be installed');
+    assert.match(s.validated, /PermitRootLogin no/,
+        'And sshd was handed the staged file to refuse, not asked for a read-back');
     cleanup(s);
 }
 
