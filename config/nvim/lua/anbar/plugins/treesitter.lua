@@ -44,6 +44,7 @@ return {
 					"prisma",
 					"svelte",
 					"php", "json", "blade", "typescript", "tsx", "go", "rust", "markdown", "markdown_inline",
+					"java", "xml", "properties", "yaml",
 				},
 				sync_install = false,
 				autopairs = { enable = true },

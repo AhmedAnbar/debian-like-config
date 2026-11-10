@@ -10,6 +10,8 @@ return {
         "svelte-language-server", "html-lsp", "stylua", "prettier", "eslint_d",
         "tailwindcss-language-server", "pint", "blade-formatter", "hadolint",
         "sql-formatter", "gopls", "gofumpt", "goimports-reviser", "golines", "htmx-lsp",
+        -- Java: the language server, its debugger and test-runner bundles, and Spring Boot.
+        "jdtls", "java-debug-adapter", "java-test", "vscode-spring-boot-tools",
       },
       auto_update = false,
       run_on_start = false, -- Explicit :MasonToolsInstall; no background downloads at startup.

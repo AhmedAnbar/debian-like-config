@@ -141,6 +141,8 @@ Every package the installer can offer, generated from `packages/apt-map.tsv`. `R
 | `unzip` | `unzip` | both |  |
 | `lazygit` | `lazygit` | both |  |
 | `fonts-jetbrains-mono` | `ttf-jetbrains-mono-nerd` | both | Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted |
+| `default-jdk` | `jdk-openjdk` | both | eclipse.jdt.ls needs Java 21 or newer; Kali Rolling resolves default-jdk to OpenJDK 25, and setup-nvim.sh checks the version it gets |
+| `maven` | `maven` | both | Builds Java projects without a wrapper, and :JavaNew generates projects with it |
 | `sway` | `sway` | both | Debian 13 has 1.10.1 and Ubuntu 26.04 has 1.11 |
 | `swaybg` | `swaybg` | both |  |
 | `swayidle` | `swayidle` | both |  |
@@ -269,6 +271,33 @@ configuration with `sway -C`, check that Waybar 0.12.0 and 0.15.0 both load
 show that the session renders, that the touchscreen mapping works, or that the
 fonts look right: those are confirmed on the machine, and this README will say
 so when they have been.
+
+## Java and Spring Boot in Neovim
+
+`setup-nvim.sh` installs a JDK (`default-jdk`) and Maven with the editor tools, and
+its Mason step installs eclipse.jdt.ls (`jdtls`), the Java debugger and test runner
+bundles, and the Spring Boot language server. The Java language server needs Java 21
+or newer; the script warns if `java` is older.
+
+**Creating a project.** `Space j n` (or `:SpringNew`) asks for the build tool, the
+Java version, the group and artifact ids and the folder, then opens a Telescope list
+of every dependency start.spring.io offers: Tab marks one, Enter creates the project.
+It downloads the project from start.spring.io, `cd`s into it, and opens the
+`*Application.java` file. `:JavaNew` creates a plain Maven project from the
+quickstart archetype instead, which needs `mvn`.
+
+**In a Java buffer.** `Space j` then: `r` run the app (`./mvnw spring-boot:run` or
+`./gradlew bootRun`) · `b` build · `x` all tests · `t` test the method under the
+cursor · `T` test the class · `o` organise imports · `v`/`c` extract a variable or
+constant · `m` (visual) extract a method · `u` reload `pom.xml`/`build.gradle` ·
+`s` Spring beans, endpoints and annotations. Debugging: F5 start or continue (it
+lists the main classes), F9 breakpoint, F10/F11/F12 step over/into/out, Shift+F5
+stop. Lombok works without any setup.
+
+**Spring support** comes from `spring-boot.nvim`: completion and hover in
+`application.properties` and `application.yml`, and bean and endpoint search. It
+starts only in projects that depend on Spring Boot, and it needs Neovim 0.12, so on
+Ubuntu 26.04's apt Neovim (0.11.6) Java works without the Spring extras.
 
 ## Third-party applications
 

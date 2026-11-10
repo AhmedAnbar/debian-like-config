@@ -2,6 +2,15 @@ config/conky/sessions/i3-conky.conf	The lines to paste into i3's single-file con
 config/conky/sessions/sway-30-conky.conf	A Sway config.d fragment, which the Arch repository has no equivalent of because its Sway tree autostarts the panel from the main config
 config/i3/config	Debian uses the freedesktop autostart URL rather than the Arch wiki one; the conky lines are now the same as upstream
 config/i3/emoji.sh	A bundled picker reading unicode-data's emoji-test.txt, because rofi-emoji is packaged in neither release
+config/nvim/lazy-lock.json	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/java/init.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/java/new.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/plugins/dap.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/plugins/java.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/plugins/mason.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/plugins/treesitter.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/user/init.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/user/java_new.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/sway/clipboard.sh	The missing-cliphist message names apt rather than pacman
 config/sway/session-start.sh	Debian 13 has no polkit-gnome agent, so the session probes the mate-polkit and GNOME paths in turn
 zsh/zshrc	Debian installs the Zsh plugins under /usr/share/<plugin>/ rather than Arch's /usr/share/zsh/plugins/<plugin>/

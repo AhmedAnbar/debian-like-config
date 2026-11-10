@@ -56,7 +56,7 @@ if ask 'Download the locked Neovim plugins?'; then
     run nvim --headless '+Lazy! restore' '+qa!'
 fi
 if ask 'Install the configured Mason language servers and formatters?'; then
-    for tool in node npm php composer go; do
+    for tool in node npm php composer go java; do
         if ! "$dry_run" && ! command -v "$tool" >/dev/null; then
             printf 'Missing %s; rerun and accept the tooling step first.\n' "$tool" >&2
             exit 1
@@ -64,5 +64,14 @@ if ask 'Install the configured Mason language servers and formatters?'; then
     done
     run nvim --headless '+MasonToolsInstallSync' '+qa!'
 fi
+# eclipse.jdt.ls refuses to start on a JDK older than 21, and says so only in its log.
+if ! "$dry_run" && command -v java >/dev/null; then
+    java_major=$(java -version 2>&1 | awk -F'"' '/version/ { split($2, v, "."); print v[1]; exit }' || true)
+    if [[ "$java_major" =~ ^[0-9]+$ ]] && (( java_major < 21 )); then
+        printf 'java is version %s; the Java language server needs 21 or newer.\n' "$java_major"
+        printf 'Install openjdk-21-jdk or newer and select it with: sudo update-alternatives --config java\n'
+    fi
+fi
 printf '\nRestart Neovim after tool installation. Leader is Space; Space + ? searches keymaps.\n'
 printf 'Rust tooling and the Laravel language server are installed in a later phase.\n'
+printf 'Java: Space j n creates a Spring Boot project (:SpringNew); :JavaNew a plain Maven one.\n'

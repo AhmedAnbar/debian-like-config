@@ -18,7 +18,6 @@ config/kitty/current-theme.conf
 config/kitty/kitty.conf
 config/mako/config
 config/nvim/init.lua
-config/nvim/lazy-lock.json
 config/nvim/lua/anbar/init.lua
 config/nvim/lua/anbar/plugins/automkdir.lua
 config/nvim/lua/anbar/plugins/bufferline.lua
@@ -30,7 +29,6 @@ config/nvim/lua/anbar/plugins/comment-box.lua
 config/nvim/lua/anbar/plugins/comment-todo.lua
 config/nvim/lua/anbar/plugins/comment.lua
 config/nvim/lua/anbar/plugins/conform.lua
-config/nvim/lua/anbar/plugins/dap.lua
 config/nvim/lua/anbar/plugins/database.lua
 config/nvim/lua/anbar/plugins/devdocs.lua
 config/nvim/lua/anbar/plugins/dressing.lua
@@ -44,7 +42,6 @@ config/nvim/lua/anbar/plugins/lazydocker.lua
 config/nvim/lua/anbar/plugins/lspconfig.lua
 config/nvim/lua/anbar/plugins/lualine.lua
 config/nvim/lua/anbar/plugins/markdown_previewer.lua
-config/nvim/lua/anbar/plugins/mason.lua
 config/nvim/lua/anbar/plugins/neotree.lua
 config/nvim/lua/anbar/plugins/noice.lua
 config/nvim/lua/anbar/plugins/none-ls.lua
@@ -64,7 +61,6 @@ config/nvim/lua/anbar/plugins/symbols_outline.lua
 config/nvim/lua/anbar/plugins/tailwindcss-colorizer.lua
 config/nvim/lua/anbar/plugins/telescope.lua
 config/nvim/lua/anbar/plugins/tmux.lua
-config/nvim/lua/anbar/plugins/treesitter.lua
 config/nvim/lua/anbar/plugins/trouble.lua
 config/nvim/lua/anbar/plugins/tsc.lua
 config/nvim/lua/anbar/plugins/ufo.lua
@@ -75,7 +71,6 @@ config/nvim/lua/anbar/plugins/which-key.lua
 config/nvim/lua/anbar/plugins/wrapping.lua
 config/nvim/lua/anbar/user/format_on_save.lua
 config/nvim/lua/anbar/user/highlight_yank.lua
-config/nvim/lua/anbar/user/init.lua
 config/nvim/lua/anbar/user/keymaps.lua
 config/nvim/lua/anbar/user/lazy.lua
 config/nvim/lua/anbar/user/options.lua

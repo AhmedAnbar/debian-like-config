@@ -74,6 +74,8 @@ editor-tools	fd	fd-find	both	Debian installs the binary as fdfind; the Neovim co
 editor-tools	unzip	unzip	both	-
 editor-tools	lazygit	lazygit	both	-
 editor-tools	ttf-jetbrains-mono-nerd	fonts-jetbrains-mono	both	Debian packages the plain family; the Nerd Font patch is not packaged and is installed by hand if wanted
+editor-tools	jdk-openjdk	default-jdk	both	eclipse.jdt.ls needs Java 21 or newer; Kali Rolling resolves default-jdk to OpenJDK 25, and setup-nvim.sh checks the version it gets
+editor-tools	maven	maven	both	Builds Java projects without a wrapper, and :JavaNew generates projects with it
 sway	sway	sway	both	Debian 13 has 1.10.1 and Ubuntu 26.04 has 1.11
 sway	swaybg	swaybg	both	-
 sway	swayidle	swayidle	both	-
