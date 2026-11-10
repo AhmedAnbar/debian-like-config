@@ -131,6 +131,29 @@ fs.rmSync(scratch, {recursive: true, force: true});
     assert.match(result.stdout, /unavailable: delta \(Not packaged anywhere/, 'With its reason');
     fs.rmSync(namedScratch, {recursive: true, force: true});
 }
+// On Kali a kali row replaces the Debian row for the same name, as it does for a group.
+// setup-sway.sh asked Kali for network-manager-gnome, which kali-rolling lacks, and apt
+// refused the whole transaction. The repository's own map is used, because that row is
+// the one the bug was about.
+{
+    const probe = (variant) => spawnSync('bash', ['-c', `
+        dry_run=true; target_config=$HOME/.config; backup_dir=$HOME/backup
+        source ${path.join(root, 'lib/common.sh')}
+        variant=${variant}
+        map_named_packages ${path.join(root, 'packages/apt-map.tsv')} debian picked network-manager-applet kitty
+        printf '%s\\n' "\${picked[@]}"
+        printf 'skipped: %s\\n' "\${skipped[*]}"
+    `], {encoding: 'utf8', timeout: 10000});
+    const onKali = probe('kali');
+    assert.equal(onKali.status, 0, onKali.stderr);
+    assert.match(onKali.stdout, /^network-manager-applet$/m, 'Kali gets the applet under its own name');
+    assert.doesNotMatch(onKali.stdout, /network-manager-gnome/, 'And never the Debian name it lacks');
+    assert.match(onKali.stdout, /^kitty$/m, 'Names without a kali row keep the Debian spelling');
+    const onDebian = probe('');
+    assert.match(onDebian.stdout, /^network-manager-gnome$/m, 'Debian keeps its own name');
+    assert.doesNotMatch(onDebian.stdout, /skipped: .*network-manager-applet/,
+        'A kali row is another distribution’s business on Debian, not a skip to report');
+}
 // The fast path must not leave a wrong mode behind: install.sh writes the shared
 // helpers 644 for the i3 session and setup-sway.sh installs the same bytes 755.
 {

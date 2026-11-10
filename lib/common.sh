@@ -227,20 +227,32 @@ skipped=()
 # not install whole asks for those rows by name, and still gets the release's spelling:
 # setup-sway.sh installs the browser this way, and gets firefox-esr or firefox.
 # Usage: map_named_packages <map> <release> <array name> <name>...
+# A row naming the running variant (see map_group_packages) replaces the parent's row
+# for the same name here too; without that, Kali was offered network-manager-gnome,
+# which it does not have, and apt refused the whole transaction.
 map_named_packages() {
     local map=$1 want=$2
     local -n _mnp_out=$3
     shift 3
-    local list=() g arch apt where note name
+    local use=${variant:-$want}
+    local list=() g arch apt where note name overridden
     _mnp_out=()
     for name in "$@"; do
+        overridden=false
+        if [[ "$use" != "$want" ]]; then
+            while IFS=$'\t' read -r g arch apt where note; do
+                [[ "$arch" == "$name" && "$where" == "$use" ]] && overridden=true
+            done < <(tail -n +2 -- "$map")
+        fi
         while IFS=$'\t' read -r g arch apt where note; do
             [[ "$arch" == "$name" || ( "$arch" == '-' && "$apt" == "$name" ) ]] || continue
+            [[ "$where" == "$use" ]] || ! "$overridden" || continue
             case "$where" in
                 none) unavailable+=("$arch ($note)") ;;
-                both) list+=("$apt") ;;
-                "$want") list+=("$apt") ;;
-                *) skipped+=("$apt ($note)") ;;
+                both|"$want") list+=("$apt") ;;
+                "$use") if [[ "$apt" == - ]]; then unavailable+=("$arch ($note)"); else list+=("$apt"); fi ;;
+                debian|ubuntu) skipped+=("$apt ($note)") ;;
+                *) ;; # another derivative's row: not this machine's business
             esac
         done < <(tail -n +2 -- "$map")
     done

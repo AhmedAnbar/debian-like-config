@@ -34,8 +34,8 @@ const kali = osRelease('ID=kali\nID_LIKE=debian\nPRETTY_NAME="Kali GNU/Linux Rol
 // with no map at all. So the fixture gives each of the two names a different
 // spelling per archive -- none of which the script could guess -- and the three
 // os-release fixtures above then show which archive was consulted. The kali row
-// exists for one reason: map_named_packages takes the archive, so it must be
-// invisible on a Kali run, and a lookup handed the variant instead would pick it up.
+// replaces the Debian row on a Kali run, as a variant row does for a group lookup:
+// that is how the map spells a package Kali names differently from Debian.
 const mapFile = (name, rows) => {
     const file = path.join(scratch, name);
     fs.writeFileSync(file, ['group\tarch\tapt\twhere\tnote', ...rows].join('\n') + '\n');
@@ -46,7 +46,7 @@ const map = mapFile('apt-map.tsv', [
     'dev\tcurl\tcurl-ubuntu-spelling\tubuntu\tthe Ubuntu archive spelling',
     'sway\tjq\tjq\tdebian\tthe Debian archive spelling',
     'sway\tjq\tjq-ubuntu-spelling\tubuntu\tthe Ubuntu archive spelling',
-    'sway\tjq\tjq-kali-row\tkali\ta row keyed on the running variant, which this lookup does not read',
+    'sway\tjq\tjq-kali-row\tkali\ta row keyed on the running variant, which replaces the Debian row there',
 ]);
 
 // This machine runs a real network and a real package manager. A PATH built from a
@@ -423,17 +423,15 @@ const noDownload = (run) => {
 }
 
 // Scenario: Kali. release is the archive, which is Debian's for Kali, and variant is
-// what is running. The family shown is Kali's; the package name is Debian's. The
-// map's kali row has to stay invisible here, because map_named_packages is handed
-// the archive -- hand it the variant and that row answers instead.
+// what is running. The family shown is Kali's. A kali row replaces the Debian row,
+// because Kali can lack a Debian package outright (network-manager-gnome), and an
+// apt transaction naming one missing package installs nothing at all.
 {
     const onKali = herdr({installed: true, jq: false, answers: 'y', release: kali});
     assert.equal(onKali.result.status, 0, onKali.out);
     assert.match(onKali.result.stdout, /\(Kali family\)/, 'Kali is named as the family that is running');
-    assert.match(onKali.calls, /^apt-get install -y jq$/m,
-        'And the package name is the Debian archive spelling, because that is the archive Kali uses');
-    assert.doesNotMatch(onKali.out, /jq-kali-row/,
-        'The row keyed on the variant is not what this lookup reads');
+    assert.match(onKali.calls, /^apt-get install -y jq-kali-row$/m,
+        'The row keyed on the running variant replaces the Debian archive spelling');
     assert.doesNotMatch(onKali.out, /jq-ubuntu-spelling/, 'Nor is another archive\u2019s row');
     onKali.clean();
 }
