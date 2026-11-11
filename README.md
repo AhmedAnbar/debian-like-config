@@ -294,6 +294,14 @@ constant · `m` (visual) extract a method · `u` reload `pom.xml`/`build.gradle`
 lists the main classes), F9 breakpoint, F10/F11/F12 step over/into/out, Shift+F5
 stop. Lombok works without any setup.
 
+**New files and snippets.** A new or empty `.java` file starts with its `package`
+line, taken from its path under `src/main/java` or `src/test/java`, and a class named
+after the file. `snippets/java.snippets` adds short names on top of friendly-snippets:
+`psvm` `sout` `soutv` `log` `pf` `getter` `setter` `stream`; `interface` `record`
+`enum` `exception` named after the file; Spring classes `rc` `ctrl` `svc` `comp` `repo`
+`entity` `cfg` `advice`; members `getm` `getid` `postm` `putm` `delm` `bean` `inject`
+`val`; tests `test` `sbt` `wmt`. They add no imports, so follow them with `Space j o`.
+
 **Spring support** comes from `spring-boot.nvim`: completion and hover in
 `application.properties` and `application.yml`, and bean and endpoint search. It
 starts only in projects that depend on Spring Boot, and it needs Neovim 0.12, so on

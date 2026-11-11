@@ -1,0 +1,214 @@
+# Java and Spring Boot shortcuts. friendly-snippets already provides class, main, sysout,
+# fori, foreach, try_catch, ctor, the test_* and mock_* families and more; these add the
+# short IntelliJ-style names and the Spring pieces it lacks. Missing imports: Space j o.
+
+# ---------- everyday ----------
+snippet psvm "public static void main"
+	public static void main(String[] args) {
+		${0}
+	}
+
+snippet sout "System.out.println"
+	System.out.println(${0});
+
+snippet soutv "Print a variable with its name"
+	System.out.println("${1:value} = " + ${1});
+
+snippet serr "System.err.println"
+	System.err.println(${0});
+
+snippet souf "System.out.printf"
+	System.out.printf("${1:%s}%n", ${0});
+
+snippet log "SLF4J logger field"
+	private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(${1:$TM_FILENAME_BASE}.class);
+
+snippet pf "private final field"
+	private final ${1:Type} ${2:name};
+
+snippet getter "Getter method"
+	public ${1:Type} get${2:Name}() {
+		return ${3:field};
+	}
+
+snippet setter "Setter method"
+	public void set${2:Name}(${1:Type} ${3:value}) {
+		this.${4:field} = ${3};
+	}
+
+snippet tostr "toString override"
+	@Override
+	public String toString() {
+		return "${1:$TM_FILENAME_BASE}{" + ${0} + "}";
+	}
+
+snippet lambda "Lambda expression"
+	(${1:x}) -> ${0}
+
+snippet stream "Stream map/filter/toList"
+	${1:list}.stream()
+		.filter(${2:x} -> ${3:true})
+		.map(${4:x} -> ${5:x})
+		.toList();
+
+# ---------- type declarations (named after the file) ----------
+snippet interface "Interface named after the file"
+	public interface ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet record "Record named after the file"
+	public record ${1:$TM_FILENAME_BASE}(${2:String name}) {
+		${0}
+	}
+
+snippet enum "Enum named after the file"
+	public enum ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet exception "Unchecked exception named after the file"
+	public class ${1:$TM_FILENAME_BASE} extends RuntimeException {
+		public ${1}(String message) {
+			super(message);
+		}
+	}
+
+# ---------- Spring Boot classes ----------
+snippet rc "@RestController class"
+	@RestController
+	@RequestMapping("/${2:api}")
+	public class ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet ctrl "@Controller class (views)"
+	@Controller
+	public class ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet svc "@Service class"
+	@Service
+	public class ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet comp "@Component class"
+	@Component
+	public class ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet repo "Spring Data JPA repository"
+	public interface ${1:$TM_FILENAME_BASE} extends JpaRepository<${2:Entity}, ${3:Long}> {
+		${0}
+	}
+
+snippet entity "JPA @Entity with generated id"
+	@Entity
+	@Table(name = "${2:table}")
+	public class ${1:$TM_FILENAME_BASE} {
+
+		@Id
+		@GeneratedValue(strategy = GenerationType.IDENTITY)
+		private Long id;
+
+		${0}
+	}
+
+snippet cfg "@Configuration class"
+	@Configuration
+	public class ${1:$TM_FILENAME_BASE} {
+		${0}
+	}
+
+snippet advice "@RestControllerAdvice exception handler"
+	@RestControllerAdvice
+	public class ${1:$TM_FILENAME_BASE} {
+
+		@ExceptionHandler(${2:RuntimeException}.class)
+		public ResponseEntity<String> handle(${2} ex) {
+			return ResponseEntity.status(HttpStatus.${3:BAD_REQUEST}).body(ex.getMessage());
+		}
+	}
+
+# ---------- Spring Boot members ----------
+snippet inject "Constructor injection"
+	private final ${1:Type} ${2:name};
+
+	public ${3:$TM_FILENAME_BASE}(${1} ${2}) {
+		this.${2} = ${2};
+	}
+
+snippet bean "@Bean method"
+	@Bean
+	public ${1:Type} ${2:name}() {
+		return ${0};
+	}
+
+snippet getm "@GetMapping method"
+	@GetMapping("${1}")
+	public ${2:ResponseEntity<?>} ${3:get}(${4}) {
+		${0}
+	}
+
+snippet getid "@GetMapping /{id}"
+	@GetMapping("/{id}")
+	public ${1:ResponseEntity<?>} ${2:findById}(@PathVariable ${3:Long} id) {
+		${0}
+	}
+
+snippet postm "@PostMapping method"
+	@PostMapping("${1}")
+	public ${2:ResponseEntity<?>} ${3:create}(@RequestBody ${4:Dto} ${5:body}) {
+		${0}
+	}
+
+snippet putm "@PutMapping method"
+	@PutMapping("/{id}")
+	public ${1:ResponseEntity<?>} ${2:update}(@PathVariable ${3:Long} id, @RequestBody ${4:Dto} ${5:body}) {
+		${0}
+	}
+
+snippet delm "@DeleteMapping method"
+	@DeleteMapping("/{id}")
+	public ${1:ResponseEntity<Void>} ${2:delete}(@PathVariable ${3:Long} id) {
+		${0}
+		return ResponseEntity.noContent().build();
+	}
+
+snippet val "@Value property injection"
+	@Value("\${${1:app.property}}")
+	private ${2:String} ${3:name};
+
+# ---------- tests ----------
+snippet test "JUnit 5 @Test method"
+	@Test
+	void ${1:shouldDoSomething}() {
+		${0}
+	}
+
+snippet sbt "@SpringBootTest class"
+	@SpringBootTest
+	class ${1:$TM_FILENAME_BASE} {
+
+		@Test
+		void ${2:contextLoads}() {
+			${0}
+		}
+	}
+
+snippet wmt "@WebMvcTest class with MockMvc"
+	@WebMvcTest(${2:Controller}.class)
+	class ${1:$TM_FILENAME_BASE} {
+
+		@Autowired
+		private MockMvc mockMvc;
+
+		@Test
+		void ${3:returnsOk}() throws Exception {
+			mockMvc.perform(get("${4:/api}"))
+				.andExpect(status().isOk());
+		}
+	}

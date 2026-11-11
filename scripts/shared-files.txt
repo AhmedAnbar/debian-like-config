@@ -28,7 +28,6 @@ config/nvim/lua/anbar/plugins/colorscheme.lua
 config/nvim/lua/anbar/plugins/comment-box.lua
 config/nvim/lua/anbar/plugins/comment-todo.lua
 config/nvim/lua/anbar/plugins/comment.lua
-config/nvim/lua/anbar/plugins/conform.lua
 config/nvim/lua/anbar/plugins/database.lua
 config/nvim/lua/anbar/plugins/devdocs.lua
 config/nvim/lua/anbar/plugins/dressing.lua
@@ -59,7 +58,6 @@ config/nvim/lua/anbar/plugins/splitjoin.lua
 config/nvim/lua/anbar/plugins/surround.lua
 config/nvim/lua/anbar/plugins/symbols_outline.lua
 config/nvim/lua/anbar/plugins/tailwindcss-colorizer.lua
-config/nvim/lua/anbar/plugins/telescope.lua
 config/nvim/lua/anbar/plugins/tmux.lua
 config/nvim/lua/anbar/plugins/trouble.lua
 config/nvim/lua/anbar/plugins/tsc.lua

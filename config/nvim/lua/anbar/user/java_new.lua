@@ -5,3 +5,6 @@ vim.api.nvim_create_user_command("SpringNew", function() require("anbar.java.new
 vim.api.nvim_create_user_command("JavaNew", function() require("anbar.java.new").java_new() end,
   { desc = "New plain Maven Java project" })
 vim.keymap.set("n", "<leader>jn", "<cmd>SpringNew<cr>", { silent = true, desc = "Java: new Spring Boot project" })
+
+-- New or empty .java files start with their package line and a class named after the file.
+require("anbar.java.template").setup()

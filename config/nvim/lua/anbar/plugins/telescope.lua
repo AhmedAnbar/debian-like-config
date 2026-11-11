@@ -39,7 +39,15 @@ return {
           -- Include dotfiles (.env.example, .github) while still honouring .gitignore.
           find_files = {
             hidden = true,
-            find_command = { "fd", "--type", "f", "--hidden", "--strip-cwd-prefix", "--exclude", ".git" },
+            -- Debian ships fd as "fdfind"; use whichever exists, else ripgrep.
+            find_command = (function()
+              for _, fd in ipairs({ "fd", "fdfind" }) do
+                if vim.fn.executable(fd) == 1 then
+                  return { fd, "--type", "f", "--hidden", "--strip-cwd-prefix", "--exclude", ".git" }
+                end
+              end
+              return { "rg", "--files", "--hidden", "--glob", "!.git" }
+            end)(),
           },
           buffers = { sort_mru = true, ignore_current_buffer = true },
         },

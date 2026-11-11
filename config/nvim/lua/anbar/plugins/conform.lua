@@ -33,7 +33,7 @@ return {
           graphql = { "prettier" },
           lua = { "stylua" },
           php = { "pint" },
-          sql = { "sql-formatter" },
+          sql = { "sql_formatter" },
           blade = { "blade-formatter" },
           go = { "gofumpt", "goimports_reviser", "golines" },
         },

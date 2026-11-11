@@ -5,12 +5,16 @@ config/i3/emoji.sh	A bundled picker reading unicode-data's emoji-test.txt, becau
 config/nvim/lazy-lock.json	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/nvim/lua/anbar/java/init.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/nvim/lua/anbar/java/new.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/java/template.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/plugins/conform.lua	Names the SQL formatter sql_formatter, the name conform.nvim knows it by; sql-formatter made every save of a .sql file warn that no formatter was available
 config/nvim/lua/anbar/plugins/dap.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/nvim/lua/anbar/plugins/java.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/nvim/lua/anbar/plugins/mason.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/lua/anbar/plugins/telescope.lua	Debian installs fd as fdfind, so find_files picks fd, then fdfind, then ripgrep instead of failing with fd: Executable not found
 config/nvim/lua/anbar/plugins/treesitter.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/nvim/lua/anbar/user/init.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/nvim/lua/anbar/user/java_new.lua	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
+config/nvim/snippets/java.snippets	Java and Spring Boot support (nvim-jdtls, spring-boot.nvim, :SpringNew) was added in this repository first and is not in the Arch repository yet
 config/sway/clipboard.sh	The missing-cliphist message names apt rather than pacman
 config/sway/session-start.sh	Debian 13 has no polkit-gnome agent, so the session probes the mate-polkit and GNOME paths in turn
 zsh/zshrc	Debian installs the Zsh plugins under /usr/share/<plugin>/ rather than Arch's /usr/share/zsh/plugins/<plugin>/
